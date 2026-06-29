@@ -588,9 +588,9 @@ const NBack = {
 
   // Timing scales with difficulty — harder modes need more time to recall
   _timing() {
-    if (this.mode === 'hell')    return { display: 3500, iti: 600 };  // 4-Back, 5×5
-    if (this.mode === '3')       return { display: 3000, iti: 500 };  // 3-Back
-    if (this.mode === '2')       return { display: 2500, iti: 400 };  // 2-Back
+    if (this.mode === 'hell')    return { display: 4500, iti: 800 };  // 4-Back, 5×5
+    if (this.mode === '3')       return { display: 4000, iti: 700 };  // 3-Back
+    if (this.mode === '2')       return { display: 3000, iti: 500 };  // 2-Back
     return { display: 2000, iti: 300 };  // 1-Back & tutorial
   },
 
