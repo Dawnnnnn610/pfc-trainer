@@ -415,8 +415,24 @@ const NBack = {
   running: false,
   respondedThisTrial: {pos: false, col: false},
   tutorialMode: false,
-  responseWindowOpen: false, // true while cell is lit; false after display time ends
-  missTimer: null,           // fires when response window closes to check for misses     // which warmup trial we're on
+  responseWindowOpen: false,
+  missTimer: null,
+  _pend: [], // centralized setTimeout IDs for cleanup
+
+  _schedule(fn, ms) {
+    const id = setTimeout(fn, ms);
+    this._pend.push(id);
+    return id;
+  },
+
+  _clearAll() {
+    this._pend.forEach(clearTimeout);
+    this._pend = [];
+    this.running = false; this.responseWindowOpen = false;
+    document.querySelectorAll('.nback-miss-overlay').forEach(e => e.remove());
+    if (this.trialTimer) { clearTimeout(this.trialTimer); this.trialTimer = null; }
+    if (this.missTimer) { clearTimeout(this.missTimer); this.missTimer = null; }
+  },
 
   COLORS: ['#4da6ff','#4cdf80','#f7545c','#f7c948','#ff8c42','#c084fc'],
 
@@ -438,6 +454,7 @@ const NBack = {
     document.getElementById('resp-pos').className = 'resp-btn';
     document.getElementById('resp-col').className = 'resp-btn';
     this.running = false;
+    this._pend.forEach(clearTimeout); this._pend = [];
     if (this.trialTimer) clearTimeout(this.trialTimer);
     this.renderGrid();
     this._bindLevels();
@@ -451,23 +468,18 @@ const NBack = {
         if (this.n === newN) return;
         // Allow level switching at any time: during init, or during running game/tutorial
         if (this.running) {
-          // Stop current run, switch level, restart
-          if (this.trialTimer) clearTimeout(this.trialTimer);
-          if (this.missTimer) clearTimeout(this.missTimer);
-          this.running = false;
-          // Remove stale miss overlays
-          document.querySelectorAll('.nback-miss-overlay').forEach(e => e.remove());
+          this._clearAll(); // kill all pending timers
           this.n = newN;
           document.querySelectorAll('#nb-levels button').forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
-          // Restart in the same mode
           if (this.tutorialMode) {
-            this._genTutorialSeq();
+            this.running = true;
+            this.currentIdx = 0;
             this.tutorial.step = 0;
             this.tutorial.responses = [];
-            this.currentIdx = 0;
-            this.running = true;
-            this.tutorial._step0();
+            this.tutorial._resolved = false;
+            this._genTutorialSeq();
+            this.tutorial._showStep();
           } else {
             this.generateSequence();
             this.currentIdx = 0;
@@ -577,9 +589,10 @@ const NBack = {
   /* ── Run one trial ── */
   runTrial() {
     if (this.currentIdx >= this.trials.length) { this.finish(); return; }
-    // Clear any stale timers
-    if (this.trialTimer) clearTimeout(this.trialTimer);
-    if (this.missTimer) clearTimeout(this.missTimer);
+    // Clean up only slate timers (don't use _clearAll — we're mid-game)
+    this._pend.forEach(clearTimeout); this._pend = [];
+    if (this.trialTimer) { clearTimeout(this.trialTimer); this.trialTimer = null; }
+    if (this.missTimer) { clearTimeout(this.missTimer); this.missTimer = null; }
     document.querySelectorAll('.nback-miss-overlay').forEach(e => e.remove());
 
     const trial = this.trials[this.currentIdx];
@@ -620,34 +633,22 @@ const NBack = {
     }
 
     // ── Response window: closes after displayMs ──
-    this.missTimer = setTimeout(() => {
+    this.missTimer = this._schedule(() => {
       this.responseWindowOpen = false;
       this._clearCells();
       bar.style.transition = 'none'; bar.style.width = '0%'; bar.classList.remove('urgent');
 
-      // Check for misses (only in active phase)
       if (!isWarmup) {
-        let missed = '';
-        if (hasPosMatch && !this.respondedThisTrial.pos) missed += 'pos';
-        if (hasColMatch && !this.respondedThisTrial.col) missed += (missed ? ',' : '') + 'col';
-        // Also mark false alarms as "wrong" - they were already handled in respond()
-
-        if (missed) {
-          // Show MISS overlay
+        if ((hasPosMatch && !this.respondedThisTrial.pos) || (hasColMatch && !this.respondedThisTrial.col)) {
           this._showMissOverlay(trial.pos, hasPosMatch && !this.respondedThisTrial.pos, hasColMatch && !this.respondedThisTrial.col);
-          // Record as miss (they didn't respond)
-          // already recorded as {pos:false, col:false} in responses array
           this._updateScore();
         }
-
-        // Clear response highlights
         document.getElementById('resp-pos').className = 'resp-btn';
         document.getElementById('resp-col').className = 'resp-btn';
         document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.remove('match-hit', 'match-miss'));
       }
 
-      // ITI then next trial
-      this.trialTimer = setTimeout(() => {
+      this.trialTimer = this._schedule(() => {
         this.currentIdx++;
         this.runTrial();
       }, this.itiMs);
@@ -790,8 +791,6 @@ const NBack = {
     step: 0,
     responses: [],
     responded: {pos: false, col: false},
-    _autoTimer: null,
-    _displayTimer: null,
     _resolved: false, // prevent double-advance race
 
     start() {
@@ -833,14 +832,12 @@ const NBack = {
       NBack._showCells(trial);
       NBack._showPhase('warmup', '👀 暖场 ' + NBack.n + ' 步', '观察并记住，无需操作。' + NBack.n + '-Back：第 ' + (NBack.n + 1) + ' 步和第 1 步比较');
 
-      // Show all warmup trials in sequence, then start active
       let w = 1;
       const showWarmup = () => {
         if (w >= NBack.n) {
-          // Warmup done, start active
-          setTimeout(() => {
+          NBack._schedule(() => {
             NBack._clearCells();
-            setTimeout(() => {
+            NBack._schedule(() => {
               this.step = NBack.n;
               NBack.currentIdx = NBack.n;
               this._run();
@@ -848,24 +845,24 @@ const NBack = {
           }, 1500);
           return;
         }
-        setTimeout(() => {
+        NBack._schedule(() => {
           NBack._clearCells();
           document.getElementById('nb-guide').innerHTML = this.messages[w];
           NBack.currentIdx = w;
-          setTimeout(() => {
+          NBack._schedule(() => {
             NBack._showCells(this.seq[w]);
             w++;
             showWarmup();
           }, 400);
         }, 1800);
       };
-      setTimeout(() => showWarmup(), 2000);
+      NBack._schedule(() => showWarmup(), 2000);
     },
 
     _run() {
       if (this.step >= this.seq.length) { this._finish(); return; }
-      if (this._displayTimer) clearTimeout(this._displayTimer);
-      if (this._autoTimer) clearTimeout(this._autoTimer);
+      // Clear slate from previous step (but dont kill the game)
+      NBack._pend.forEach(clearTimeout); NBack._pend = [];
       this._resolved = false;
       document.querySelectorAll('.nback-miss-overlay').forEach(e => e.remove());
 
@@ -889,40 +886,38 @@ const NBack = {
       void bar.offsetWidth;
       bar.style.transition = 'width ' + (NBack.displayMs / 1000) + 's linear';
       bar.style.width = '0%';
-      setTimeout(() => { if (NBack.responseWindowOpen) bar.classList.add('urgent'); }, NBack.displayMs * 0.7);
+      NBack._schedule(() => { if (NBack.responseWindowOpen) bar.classList.add('urgent'); }, NBack.displayMs * 0.7);
 
-      this._displayTimer = setTimeout(() => {
+      NBack._schedule(() => {
         NBack.responseWindowOpen = false;
         NBack._clearCells();
         bar.style.transition = 'none'; bar.style.width = '100%'; bar.classList.remove('urgent');
-        if (this._resolved) return; // already handled by respond()
+        if (this._resolved) return;
 
         if (isNeither) {
-          // Correct: user didn't press anything
           this._markCorrect();
-        } else {
-          const missedPos = trial.posMatch && !this.responded.pos;
-          const missedCol = trial.colMatch && !this.responded.col;
-          if (missedPos || missedCol) {
-            // Show MISS
-            const cells = document.querySelectorAll('#nb-grid .nback-cell');
-            cells[trial.pos].classList.add('match-miss');
-            const wrap = document.getElementById('nb-grid-wrap');
-            const ov = document.createElement('div');
-            ov.className = 'nback-miss-overlay';
-            ov.textContent = '⏰ 超时！';
-            wrap.appendChild(ov);
-            setTimeout(() => ov.remove(), 600);
-            this._markWrong();
-          }
+          this._advance();
+          return;
+        }
+        const missedPos = trial.posMatch && !this.responded.pos;
+        const missedCol = trial.colMatch && !this.responded.col;
+        if (missedPos || missedCol) {
+          const cells = document.querySelectorAll('#nb-grid .nback-cell');
+          cells[trial.pos].classList.add('match-miss');
+          const wrap = document.getElementById('nb-grid-wrap');
+          const ov = document.createElement('div');
+          ov.className = 'nback-miss-overlay';
+          if (missedPos && missedCol) ov.textContent = '漏！位置+颜色';
+          else if (missedPos) ov.textContent = '漏！位置';
+          else ov.textContent = '漏！颜色';
+          wrap.appendChild(ov);
+          NBack._schedule(() => ov.remove(), 600);
+          this._markWrong();
         }
 
         document.getElementById('resp-pos').className = 'resp-btn';
         document.getElementById('resp-col').className = 'resp-btn';
         document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.remove('match-hit', 'match-miss'));
-
-        if (isNeither) this._advance();
-        // For non-neither steps, they must have answered correctly to advance (handled in respond)
       }, NBack.displayMs);
     },
 
@@ -954,7 +949,7 @@ const NBack = {
         this._markWrong();
       }
 
-      setTimeout(() => {
+      NBack._schedule(() => {
         btn.classList.remove('correct', 'wrong');
         cells.forEach(c => c.classList.remove('match-hit', 'match-miss'));
         if (actual) this._checkAdvance();
@@ -978,14 +973,12 @@ const NBack = {
 
     _markWrong() {
       document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.add('match-miss'));
-      setTimeout(() => document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.remove('match-miss')), 300);
+      NBack._schedule(() => document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.remove('match-miss')), 300);
     },
 
     _advance() {
       if (this._resolved) return;
       this._resolved = true;
-      if (this._autoTimer) { clearTimeout(this._autoTimer); this._autoTimer = null; }
-      if (this._displayTimer) { clearTimeout(this._displayTimer); }
       NBack._clearCells();
       document.getElementById('nb-timer-fill').style.width = '100%';
       this.step++;
@@ -993,14 +986,12 @@ const NBack = {
       document.getElementById('nb-response').style.display = 'none';
       document.getElementById('resp-pos').className = 'resp-btn';
       document.getElementById('resp-col').className = 'resp-btn';
-
-      setTimeout(() => this._run(), 700);
+      NBack._schedule(() => this._run(), 700);
     },
 
     _finish() {
-      if (this._autoTimer) clearTimeout(this._autoTimer);
-      if (this._displayTimer) clearTimeout(this._displayTimer);
       NBack.running = false;
+      NBack.tutorialMode = false;
       NBack.currentIdx = 0;
       document.getElementById('nb-trial').textContent = '完成';
       document.getElementById('nb-response').style.display = 'flex';
