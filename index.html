@@ -690,7 +690,7 @@ const NBack = {
     cells[trial.pos].style.backgroundColor = trial.col;
   },
 
-  /* ── Sequence generator: high randomness, good match-type mix ── */
+  /* ── Sequence generator: fully random, no predictable pattern ── */
   generateSequence() {
     const gridN = this._gridSize() * this._gridSize();
     const allCount = this.n + this.totalTrials;
@@ -699,83 +699,109 @@ const NBack = {
     this.colMatch = [];
     this.responses = [];
 
-    // Track recent positions and colors to prevent clustering
-    const recentPos = [];    // last 4 positions
-    const recentCol = [];    // last 4 colors
-    const maxRecent = 4;
+    // Only track last 2 positions to avoid *consecutive* same-spot (not a wide ban)
+    const lastTwoPos = [];
 
     for (let i = 0; i < allCount; i++) {
       let pos, col, posM, colM;
 
       if (i >= this.n) {
-        // ── Active trial ──
-        // Enforce match-type distribution: ~25% each of pos-only, col-only, both, neither
-        // Use a rotating pool to guarantee variety
-        const slot = (i - this.n) % 4;
-        const types = ['pos','col','both','neither'];
-        // Shuffle slots so it's not a predictable pattern
-        if (i === this.n) this._typeOrder = [...types].sort(() => Math.random() - 0.5);
-        const matchType = this._typeOrder[slot];
+        // ── True random per trial, with coverage guarantee ──
+        const activeIdx = i - this.n;
+        const activeTotal = this.totalTrials;
+
+        // Count how many of each type assigned so far among active trials
+        const counts = { pos: 0, col: 0, both: 0, neither: 0 };
+        for (let j = 0; j < activeIdx; j++) {
+          const pm = this.posMatch[this.n + j];
+          const cm = this.colMatch[this.n + j];
+          if (pm && cm) counts.both++;
+          else if (pm) counts.pos++;
+          else if (cm) counts.col++;
+          else counts.neither++;
+        }
+
+        // Target: each type gets ~25%, round to integer buckets
+        const perBucket = Math.floor(activeTotal / 4);
+        const remainder = activeTotal % 4;
+        const targets = {
+          pos: perBucket + (remainder > 0 ? 1 : 0),
+          col: perBucket + (remainder > 1 ? 1 : 0),
+          both: perBucket + (remainder > 2 ? 1 : 0),
+          neither: perBucket,
+        };
+
+        // Pick type: weighted random, but force rarity if some type has 0
+        const remaining = activeTotal - activeIdx;
+        let forceType = null;
+        for (const t of ['pos','col','both','neither']) {
+          if (counts[t] === 0 && remaining > 0 && targets[t] > 0) { forceType = t; break; }
+        }
+
+        let matchType;
+        if (forceType) {
+          matchType = forceType;
+        } else {
+          // Weight by how far below target each type is (want to fill gaps first)
+          const gaps = {};
+          for (const t of ['pos','col','both','neither']) {
+            gaps[t] = Math.max(0, targets[t] - counts[t]);
+          }
+          const totalGap = gaps.pos + gaps.col + gaps.both + gaps.neither || 4;
+          const r = Math.random() * totalGap;
+          if (r < gaps.pos) matchType = 'pos';
+          else if (r < gaps.pos + gaps.col) matchType = 'col';
+          else if (r < gaps.pos + gaps.col + gaps.both) matchType = 'both';
+          else matchType = 'neither';
+        }
 
         posM = (matchType === 'pos' || matchType === 'both');
         colM = (matchType === 'col' || matchType === 'both');
 
-        // Position
+        // Position: if matching, use n-back position. Otherwise full random pool.
         if (posM) {
           pos = this.trials[i - this.n].pos;
         } else {
-          // Pick a position DIFFERENT from i-n, and NOT in recentPos (to spread)
-          let candidates = [];
-          for (let p = 0; p < gridN; p++) {
-            if (p !== this.trials[i - this.n].pos && !recentPos.includes(p)) candidates.push(p);
+          const avoid = this.trials[i - this.n].pos;
+          const biased = lastTwoPos.filter(p => p !== avoid);
+          // ~70% avoid both n-back-match AND last-2; ~30% total random
+          let pool = [];
+          if (biased.length > 0 && Math.random() < 0.7) {
+            pool = Array.from({length: gridN}, (_, k) => k).filter(p => p !== avoid && !biased.includes(p));
+            if (pool.length === 0) pool = Array.from({length: gridN}, (_, k) => k).filter(p => p !== avoid);
+          } else {
+            pool = Array.from({length: gridN}, (_, k) => k).filter(p => p !== avoid);
           }
-          if (candidates.length === 0) {
-            // Fallback: just exclude i-n pos
-            candidates = [];
-            for (let p = 0; p < gridN; p++) {
-              if (p !== this.trials[i - this.n].pos) candidates.push(p);
-            }
-          }
-          pos = candidates[Math.floor(Math.random() * candidates.length)];
+          pos = pool[Math.floor(Math.random() * pool.length)];
         }
 
-        // Color
+        // Color: if matching, use n-back color. Otherwise pick completely random different color.
         if (colM) {
           col = this.trials[i - this.n].col;
         } else {
-          let candidates = [];
-          for (const c of this.COLORS) {
-            if (c !== this.trials[i - this.n].col && !recentCol.includes(c)) candidates.push(c);
-          }
-          if (candidates.length === 0) {
-            candidates = this.COLORS.filter(c => c !== this.trials[i - this.n].col);
-          }
-          col = candidates[Math.floor(Math.random() * candidates.length)];
+          const others = this.COLORS.filter(c => c !== this.trials[i - this.n].col);
+          col = others[Math.floor(Math.random() * others.length)];
         }
       } else {
-        // ── Warmup: wide spread ──
+        // ── Warmup ──
         posM = false; colM = false;
-        let candidates = [];
-        for (let p = 0; p < gridN; p++) {
-          if (!recentPos.includes(p)) candidates.push(p);
+        // Avoid same spot twice in a row
+        let pool = Array.from({length: gridN}, (_, k) => k);
+        if (lastTwoPos.length > 0) {
+          pool = pool.filter(p => !lastTwoPos.includes(p));
+          if (pool.length === 0) pool = Array.from({length: gridN}, (_, k) => k);
         }
-        if (candidates.length === 0) {
-          candidates = Array.from({length: gridN}, (_, k) => k);
-        }
-        pos = candidates[Math.floor(Math.random() * candidates.length)];
-
-        let colCandidates = this.COLORS.filter(c => !recentCol.includes(c));
-        if (colCandidates.length === 0) colCandidates = [...this.COLORS];
-        col = colCandidates[Math.floor(Math.random() * colCandidates.length)];
+        pos = pool[Math.floor(Math.random() * pool.length)];
+        col = this.COLORS[Math.floor(Math.random() * this.COLORS.length)];
       }
 
       this.posMatch.push(posM);
       this.colMatch.push(colM);
       this.trials.push({pos, col});
 
-      // Update recent trackers
-      recentPos.push(pos); if (recentPos.length > maxRecent) recentPos.shift();
-      recentCol.push(col); if (recentCol.length > maxRecent) recentCol.shift();
+      // Track last 2 positions only
+      lastTwoPos.push(pos);
+      if (lastTwoPos.length > 2) lastTwoPos.shift();
     }
   },
 
