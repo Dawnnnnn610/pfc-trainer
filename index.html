@@ -47,12 +47,12 @@ nav {
 nav .logo { font-size: 1.3rem; font-weight: 700; color: var(--accent); letter-spacing: -.02em; }
 nav .logo span { color: var(--text2); font-weight: 400; font-size: .85rem; margin-left: 6px; }
 nav button {
-  background: var(--surface2); color: var(--text);
-  border: 1px solid rgba(255,255,255,.08);
-  padding: 8px 16px; border-radius: var(--radius-sm);
-  cursor: pointer; font-size: .85rem; transition: all .2s;
+  background: var(--accent); color: #fff;
+  border: none;
+  padding: 8px 18px; border-radius: var(--radius-sm);
+  cursor: pointer; font-size: .9rem; font-weight: 600; transition: all .2s;
 }
-nav button:hover { background: var(--accent); border-color: var(--accent); }
+nav button:hover { background: var(--accent2); transform: scale(1.04); }
 
 /* ===== Layout ===== */
 main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
@@ -354,19 +354,7 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
 </main>
 
 <script>
-// ===== Audio =====
-function beep(freq, dur=0.12, type='sine', vol=0.08) {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = type; osc.frequency.value = freq;
-    gain.gain.setValueAtTime(vol, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.start(); osc.stop(ctx.currentTime + dur);
-  } catch(e) {}
-}
+// ===== Audio disabled per user request =====
 
 // ===== Storage =====
 const Storage = {
@@ -562,8 +550,6 @@ const NBack = {
     const cell = cells[trial.pos];
     cell.classList.add('lit');
     cell.style.backgroundColor = trial.col;
-    beep(440, 0.06, 'sine', 0.04);
-
     // Clear after display time
     this.trialTimer = setTimeout(() => {
       cells.forEach(c => { c.className = 'nback-cell'; c.style.backgroundColor = ''; });
@@ -590,10 +576,8 @@ const NBack = {
     const btn = document.getElementById(type === 'pos' ? 'resp-pos' : 'resp-col');
     if (actualMatch) {
       btn.classList.add('correct');
-      beep(880, 0.1, 'sine', 0.06);
     } else {
       btn.classList.add('wrong');
-      beep(220, 0.2, 'square', 0.06);
     }
     // also flash the grid cell
     const trial = this.trials[this.currentTrial];
@@ -668,7 +652,6 @@ const NBack = {
     const total = hits + misses + falseAlarms + correctRejections;
     const pct = total > 0 ? Math.round((hits + correctRejections) / total * 100) : 0;
     const isNew = Storage.setBest('nback', pct);
-    beep(isNew ? 660 : 440, 0.3, 'sine', 0.08);
 
     const results = document.getElementById('nb-results');
     results.style.display = 'block';
@@ -790,13 +773,11 @@ const Stroop = {
       if (this.combo > this.maxCombo) this.maxCombo = this.combo;
       const pts = 10 + Math.min(this.combo - 1, 5) * 5; // combo bonus: +5 per combo up to +25
       this.score += pts;
-      beep(660 + this.combo * 30, 0.08, 'sine', 0.05);
       document.getElementById('st-combo').textContent = this.combo > 1 ? '🔥 ' + this.combo + ' 连击！' : '';
     } else {
       this.combo = 0;
       this.incorrect++;
       this.score = Math.max(0, this.score - 5);
-      beep(180, 0.25, 'square', 0.06);
       document.getElementById('st-combo').textContent = '❌';
     }
     document.getElementById('st-score').textContent = this.score;
@@ -812,7 +793,6 @@ const Stroop = {
     document.getElementById('st-combo').textContent = '';
 
     const isNew = Storage.setBest('stroop', this.score);
-    beep(isNew ? 660 : 440, 0.3, 'sine', 0.08);
 
     const results = document.getElementById('st-results');
     results.style.display = 'block';
@@ -916,14 +896,12 @@ const Schulte = {
 
     if (num === this.nextTarget) {
       cell.classList.add('found');
-      beep(520 + num * 15, 0.06, 'sine', 0.04);
       this.nextTarget++;
       document.getElementById('sc-next').textContent = this.nextTarget <= 25 ? this.nextTarget : '✓';
       this.updateNextHighlight();
       if (this.nextTarget > 25) this.finish();
     } else {
       cell.classList.add('shake');
-      beep(150, 0.15, 'square', 0.05);
       setTimeout(() => cell.classList.remove('shake'), 300);
     }
   },
@@ -936,7 +914,6 @@ const Schulte = {
     document.getElementById('sc-time').textContent = this.elapsed.toFixed(1) + 's';
 
     const isNew = Storage.setBestTime('schulte', this.elapsed);
-    beep(isNew ? 660 : 440, 0.3, 'sine', 0.08);
 
     const results = document.getElementById('sc-results');
     results.style.display = 'block';
