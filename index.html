@@ -205,8 +205,16 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
 .stroop-btn:active { transform: scale(.94); }
 .stroop-btn.correct { box-shadow: 0 0 16px var(--green); border-color: var(--green); }
 .stroop-btn.wrong { box-shadow: 0 0 16px var(--red); border-color: var(--red); }
-/* 7 color buttons — background set inline via JS */
 .stroop-combo { font-size: 1.1rem; font-weight: 700; color: var(--yellow); min-height: 28px; }
+.stroop-timer-bar {
+  width: min(380px, 90vw); height: 4px; background: rgba(255,255,255,.08);
+  border-radius: 2px; margin: 0 auto 8px; overflow: hidden;
+}
+.stroop-timer-bar .fill {
+  height: 100%; background: var(--accent); border-radius: 2px;
+  transition: width .1s linear;
+}
+.stroop-timer-bar .fill.urgent { background: var(--red); }
 
 /* ===== Schulte ===== */
 .schulte-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; width: min(360px, 85vw); }
@@ -363,6 +371,7 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
   </div>
   <div class="game-body">
     <div class="instructions">选文字的<strong>字体颜色</strong>，忽略文字含义</div>
+    <div class="stroop-timer-bar" id="st-timer-bar"><div class="fill" id="st-timer-fill"></div></div>
     <div class="stroop-word-wrap"><div class="stroop-word" id="st-word"></div></div>
     <div class="stroop-buttons" id="st-btns"></div>
     <button class="btn" id="st-start">开始挑战</button>
@@ -1372,36 +1381,43 @@ document.addEventListener('keydown', e => {
 
 // ===== Stroop Challenge =====
 const Stroop = {
-  // 7 high-contrast words + colors (matching N-Back palette)
   WORDS: [
-    {char:'红', color:'#ef4444', name:'red'},
-    {char:'蓝', color:'#3b82f6', name:'blue'},
-    {char:'绿', color:'#22c55e', name:'green'},
-    {char:'黄', color:'#eab308', name:'yellow'},
-    {char:'紫', color:'#a855f7', name:'purple'},
-    {char:'橙', color:'#f97316', name:'orange'},
-    {char:'白', color:'#f1f5f9', name:'white'},
+    {char:'红', name:'red'},
+    {char:'蓝', name:'blue'},
+    {char:'绿', name:'green'},
+    {char:'黄', name:'yellow'},
+    {char:'紫', name:'purple'},
+    {char:'橙', name:'orange'},
+    {char:'白', name:'white'},
   ],
+  COLORS: {red:'#ef4444',blue:'#3b82f6',green:'#22c55e',yellow:'#eab308',purple:'#a855f7',orange:'#f97316',white:'#f1f5f9'},
   totalTrials: 20,
-  trials: [],       // {word, displayColor} sequence
+  timeLimit: 3000,         // ms per trial
+  trials: [],              // {word, displayColor, congruent:bool}
   currentTrial: 0,
-  trialStart: 0,    // performance.now() when word appeared
-  responses: [],    // {correct: bool, ms: number} per trial
-  score: 0,
-  combo: 0,
-  maxCombo: 0,
-  correct: 0,
-  incorrect: 0,
+  trialStart: 0,
+  trialTimer: null,        // timeout for 3s limit
+  responses: [],           // {correct, ms, congruent}
   running: false,
   answered: false,
+  combo: 0, maxCombo: 0,
+  correct: 0, incorrect: 0,
+  correctCongruent: 0, correctIncongruent: 0,
+  wrongCongruent: 0, wrongIncongruent: 0,
 
   init() {
-    this.score = 0; this.combo = 0; this.maxCombo = 0;
-    this.correct = 0; this.incorrect = 0; this.running = false;
+    this.running = false; this.answered = false;
+    this.combo = 0; this.maxCombo = 0;
+    this.correct = 0; this.incorrect = 0;
+    this.correctCongruent = 0; this.correctIncongruent = 0;
+    this.wrongCongruent = 0; this.wrongIncongruent = 0;
+    if (this.trialTimer) clearTimeout(this.trialTimer);
     document.getElementById('st-score').textContent = '0';
     document.getElementById('st-progress').textContent = '0/' + this.totalTrials;
     document.getElementById('st-combo').textContent = '--';
     document.getElementById('st-word').textContent = '';
+    document.getElementById('st-timer-fill').style.width = '100%';
+    document.getElementById('st-timer-fill').classList.remove('urgent');
     document.getElementById('st-start').style.display = 'inline-block';
     document.getElementById('st-restart').style.display = 'none';
     document.getElementById('st-results').style.display = 'none';
@@ -1409,26 +1425,50 @@ const Stroop = {
   },
 
   renderButtons() {
-    const container = document.getElementById('st-btns');
-    container.innerHTML = '';
+    const c = document.getElementById('st-btns');
+    c.innerHTML = '';
     this.WORDS.forEach(w => {
-      const btn = document.createElement('button');
-      btn.className = 'stroop-btn';
-      btn.textContent = w.char;
-      btn.style.backgroundColor = w.color;
-      btn.style.color = w.name === 'yellow' || w.name === 'white' ? '#000' : '#fff';
-      btn.addEventListener('click', e => { e.preventDefault(); this.answer(w.name); });
-      container.appendChild(btn);
+      const b = document.createElement('button');
+      b.className = 'stroop-btn';
+      b.textContent = w.char;
+      // D: Uniform gray buttons — no color hints
+      b.style.backgroundColor = 'var(--surface2)';
+      b.style.color = 'var(--text)';
+      b.style.borderColor = 'rgba(255,255,255,.15)';
+      b.addEventListener('click', e => { e.preventDefault(); this.answer(w.name); });
+      c.appendChild(b);
     });
+  },
+
+  generateSequence() {
+    this.trials = [];
+    let lastChar = null, consecutiveSame = 0;
+    for (let i = 0; i < this.totalTrials; i++) {
+      let word, color, congruent;
+      // Pick word: avoid repeating same word 3+ times
+      do { word = this.WORDS[Math.floor(Math.random() * this.WORDS.length)]; }
+      while (word === lastChar && consecutiveSame >= 2);
+      if (word === lastChar) consecutiveSame++; else { consecutiveSame = 0; lastChar = word; }
+
+      // ~30% congruent trials (word = font color), ~70% incongruent
+      congruent = Math.random() < 0.30;
+      if (congruent) {
+        color = word;
+      } else {
+        const others = this.WORDS.filter(w => w.name !== word.name);
+        color = others[Math.floor(Math.random() * others.length)];
+      }
+      this.trials.push({word, displayColor: color.name, congruent});
+    }
   },
 
   start() {
     if (this.running) return;
-    this.score = 0; this.combo = 0; this.maxCombo = 0;
+    this.combo = 0; this.maxCombo = 0;
     this.correct = 0; this.incorrect = 0;
-    this.currentTrial = 0;
-    this.responses = [];
-    this.running = true;
+    this.correctCongruent = 0; this.correctIncongruent = 0;
+    this.wrongCongruent = 0; this.wrongIncongruent = 0;
+    this.currentTrial = 0; this.responses = []; this.running = true;
     document.getElementById('st-score').textContent = '0';
     document.getElementById('st-progress').textContent = '0/' + this.totalTrials;
     document.getElementById('st-combo').textContent = '--';
@@ -1439,106 +1479,101 @@ const Stroop = {
     this.nextWord();
   },
 
-  restart() {
-    this.running = false;
-    this.start();
-  },
-
-  generateSequence() {
-    this.trials = [];
-    let lastColor = null, lastChar = null;
-    for (let i = 0; i < this.totalTrials; i++) {
-      let word, color;
-      // Pick word: not same as last char shown
-      do { word = this.WORDS[Math.floor(Math.random() * this.WORDS.length)]; }
-      while (word === lastChar && this.WORDS.length > 1);
-      lastChar = word;
-      // Pick display color: DIFFERENT from word meaning (Stroop conflict), not same as last color
-      let candidates = this.WORDS.filter(w => w.name !== word.name);
-      if (lastColor && candidates.length > 1) {
-        const notLast = candidates.filter(w => w.name !== lastColor);
-        if (notLast.length > 0) candidates = notLast;
-      }
-      color = candidates[Math.floor(Math.random() * candidates.length)];
-      lastColor = color.name;
-      this.trials.push({word, displayColor: color.name});
-    }
-  },
+  restart() { this.running = false; if (this.trialTimer) clearTimeout(this.trialTimer); this.start(); },
 
   nextWord() {
     if (this.currentTrial >= this.totalTrials) { this.finish(); return; }
+    if (this.trialTimer) clearTimeout(this.trialTimer);
 
-    const trial = this.trials[this.currentTrial];
+    const t = this.trials[this.currentTrial];
     document.getElementById('st-progress').textContent = (this.currentTrial + 1) + '/' + this.totalTrials;
 
     const el = document.getElementById('st-word');
-    el.textContent = trial.word.char;
-    el.style.color = trial.word.name === 'white' ? '#f1f5f9' :
-                    {red:'#ef4444',blue:'#3b82f6',green:'#22c55e',yellow:'#eab308',purple:'#a855f7',orange:'#f97316',white:'#f1f5f9'}[trial.displayColor];
+    el.textContent = t.word.char;
+    el.style.color = this.COLORS[t.displayColor];
+    el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
 
-    // Pop animation (CSS keyframe, no JS reset needed)
-    el.classList.remove('pop');
-    void el.offsetWidth;
-    el.classList.add('pop');
+    // Timer bar
+    const bar = document.getElementById('st-timer-fill');
+    bar.style.transition = 'none'; bar.style.width = '100%'; bar.classList.remove('urgent');
+    void bar.offsetWidth;
+    bar.style.transition = 'width ' + (this.timeLimit / 1000) + 's linear';
+    bar.style.width = '0%';
+    setTimeout(() => { if (!this.answered) bar.classList.add('urgent'); }, this.timeLimit * 0.6);
 
-    // Start the clock
     this.trialStart = performance.now();
     this.answered = false;
+
+    // Time limit: auto-fail if not answered
+    this.trialTimer = setTimeout(() => {
+      if (this.answered) return;
+      this.answered = true;
+      const ms = this.timeLimit;
+      const correct = false; // timeout = wrong
+      this.responses.push({correct: false, ms, congruent: t.congruent});
+      this.combo = 0; this.incorrect++;
+      if (t.congruent) this.wrongCongruent++; else this.wrongIncongruent++;
+      document.getElementById('st-combo').textContent = '⏰';
+      el.style.color = 'var(--red)';
+      this.updateScore();
+      this.currentTrial++;
+      setTimeout(() => this.nextWord(), 300);
+    }, this.timeLimit);
   },
 
   answer(color) {
     if (!this.running || this.answered) return;
     this.answered = true;
+    if (this.trialTimer) clearTimeout(this.trialTimer);
 
     const ms = performance.now() - this.trialStart;
-    const trial = this.trials[this.currentTrial];
-    const correct = color === trial.displayColor;
-    this.responses.push({correct, ms});
+    const t = this.trials[this.currentTrial];
+    const correct = color === t.displayColor;
+    this.responses.push({correct, ms, congruent: t.congruent});
 
-    // Flash the word
     const el = document.getElementById('st-word');
     el.style.color = correct ? 'var(--green)' : 'var(--red)';
-    setTimeout(() => {
-      const t = this.trials[this.currentTrial];
-      if (!t) return;
-      el.style.color = t.word.name === 'white' ? '#f1f5f9' :
-        {red:'#ef4444',blue:'#3b82f6',green:'#22c55e',yellow:'#eab308',purple:'#a855f7',orange:'#f97316',white:'#f1f5f9'}[t.displayColor];
-    }, 150);
 
     if (correct) {
-      this.combo++;
-      this.correct++;
+      this.combo++; this.correct++;
       if (this.combo > this.maxCombo) this.maxCombo = this.combo;
+      if (t.congruent) this.correctCongruent++; else this.correctIncongruent++;
       document.getElementById('st-combo').textContent = this.combo > 1 ? '🔥 x' + this.combo : '✓';
     } else {
-      this.combo = 0;
-      this.incorrect++;
+      this.combo = 0; this.incorrect++;
+      if (t.congruent) this.wrongCongruent++; else this.wrongIncongruent++;
       document.getElementById('st-combo').textContent = '❌';
     }
 
-    // Update score immediately
+    // Stop timer bar
+    const bar = document.getElementById('st-timer-fill');
+    bar.style.transition = 'none'; bar.style.width = '100%'; bar.classList.remove('urgent');
+
     this.updateScore();
     this.currentTrial++;
-    setTimeout(() => this.nextWord(), 250);
+    setTimeout(() => this.nextWord(), 300);
   },
 
   updateScore() {
-    // Calculate running score
     let raw = 0;
     for (const r of this.responses) {
       if (r.correct) {
-        if (r.ms < 600) raw += 100;
-        else if (r.ms < 1200) raw += 75;
-        else if (r.ms < 2500) raw += 50;
-        else raw += 30;
+        if (r.congruent) {
+          raw += 25;  // congruent = easy, low reward
+        } else {
+          // Incongruent: speed bonus
+          if (r.ms < 600) raw += 100;
+          else if (r.ms < 1200) raw += 75;
+          else if (r.ms < 2500) raw += 50;
+          else raw += 30;
+        }
       } else {
-        raw -= 50;
+        raw += r.congruent ? -100 : -50;  // congruent wrong = worse
       }
     }
     raw += this.maxCombo * 10;
-    // Normalize to 0-1000
-    const maxRaw = this.totalTrials * 100 + this.totalTrials * 10; // all correct + max combo
-    const minRaw = this.totalTrials * (-50);
+    const maxRaw = this.totalTrials * 100 + this.totalTrials * 10;
+    const minRaw = this.totalTrials * (-100);
     const range = maxRaw - minRaw;
     const score = range > 0 ? Math.round(((raw - minRaw) / range) * 1000) : 500;
     document.getElementById('st-score').textContent = Math.max(0, Math.min(1000, score));
@@ -1546,64 +1581,56 @@ const Stroop = {
 
   finish() {
     this.running = false;
+    if (this.trialTimer) clearTimeout(this.trialTimer);
+    document.getElementById('st-timer-fill').style.width = '100%';
+    document.getElementById('st-timer-fill').classList.remove('urgent');
 
-    // Final score computation
-    let raw = 0, totalTime = 0, fastest = Infinity, slowest = 0;
+    let raw = 0, totalTime = 0, fastest = Infinity;
     for (const r of this.responses) {
       totalTime += r.ms;
       if (r.correct && r.ms < fastest) fastest = r.ms;
-      if (r.ms > slowest) slowest = r.ms;
       if (r.correct) {
-        if (r.ms < 600) raw += 100;
-        else if (r.ms < 1200) raw += 75;
-        else if (r.ms < 2500) raw += 50;
-        else raw += 30;
+        if (r.congruent) raw += 25;
+        else { if (r.ms < 600) raw += 100; else if (r.ms < 1200) raw += 75; else if (r.ms < 2500) raw += 50; else raw += 30; }
       } else {
-        raw -= 50;
+        raw += r.congruent ? -100 : -50;
       }
     }
     raw += this.maxCombo * 10;
     const maxRaw = this.totalTrials * 100 + this.totalTrials * 10;
-    const minRaw = this.totalTrials * (-50);
-    const range = maxRaw - minRaw;
-    const score = range > 0 ? Math.max(0, Math.min(1000, Math.round(((raw - minRaw) / range) * 1000))) : 500;
+    const minRaw = this.totalTrials * (-100);
+    const score = Math.max(0, Math.min(1000, Math.round(((raw - minRaw) / (maxRaw - minRaw)) * 1000)));
 
     const isNew = Storage.setBest('stroop', score);
-
-    // Grade
-    let grade, gradeColor;
-    if (score >= 900)      { grade = 'S'; gradeColor = '#f7c948'; }
-    else if (score >= 750) { grade = 'A'; gradeColor = '#4cdf80'; }
-    else if (score >= 550) { grade = 'B'; gradeColor = '#4da6ff'; }
-    else if (score >= 350) { grade = 'C'; gradeColor = '#e0e0f0'; }
-    else if (score >= 150) { grade = 'D'; gradeColor = '#ff8c42'; }
-    else                   { grade = 'F'; gradeColor = '#f7545c'; }
-
-    const badges = {S:'🏆 Outstanding', A:'🌟 Excellent', B:'👍 Good', C:'📋 Average', D:'💪 Below Avg', F:'📚 Practice'};
+    let grade, gc;
+    if (score >= 900) { grade='S'; gc='#f7c948'; }
+    else if (score >= 750) { grade='A'; gc='#4cdf80'; }
+    else if (score >= 550) { grade='B'; gc='#4da6ff'; }
+    else if (score >= 350) { grade='C'; gc='#e0e0f0'; }
+    else if (score >= 150) { grade='D'; gc='#ff8c42'; }
+    else { grade='F'; gc='#f7545c'; }
+    const badges = {S:'🏆 Outstanding',A:'🌟 Excellent',B:'👍 Good',C:'📋 Average',D:'💪 Below Avg',F:'📚 Practice'};
     const avgTime = this.responses.length > 0 ? Math.round(totalTime / this.responses.length) : 0;
-    const accuracy = this.correct + this.incorrect > 0
-      ? Math.round(this.correct / (this.correct + this.incorrect) * 100) : 0;
 
     document.getElementById('st-word').textContent = '';
     document.getElementById('st-combo').textContent = '--';
     document.getElementById('st-start').style.display = 'none';
     document.getElementById('st-restart').style.display = 'none';
 
-    const results = document.getElementById('st-results');
-    results.style.display = 'block';
-    results.innerHTML =
+    document.getElementById('st-results').style.display = 'block';
+    document.getElementById('st-results').innerHTML =
       `<h3>挑战结束</h3>
-      <div class="big-score" style="color:${gradeColor}">${score}</div>
-      <div style="font-size:1.8rem;font-weight:900;color:${gradeColor};margin-bottom:8px">${badges[grade]}</div>
+      <div class="big-score" style="color:${gc}">${score}</div>
+      <div style="font-size:1.8rem;font-weight:900;color:${gc};margin-bottom:8px">${badges[grade]}</div>
       ${isNew ? '<div class="new-best">🎉 新纪录！</div>' : ''}
       <div class="details">
-        Correct: <b>${this.correct}</b> · Wrong: <b>${this.incorrect}</b> · Accuracy: <b>${accuracy}%</b><br>
-        Max Combo: <b>${this.maxCombo}</b> · Avg Time: <b>${avgTime}ms</b><br>
-        Fastest: <b>${fastest < Infinity ? fastest + 'ms' : '--'}</b> · Raw: <b>${raw > 0 ? '+' : ''}${raw}</b> → <b>${score}</b>/1000
+        Incongruent: <b>${this.correctIncongruent}</b>✓ / <b>${this.wrongIncongruent}</b>✗
+        &nbsp; Congruent: <b>${this.correctCongruent}</b>✓ / <b>${this.wrongCongruent}</b>✗<br>
+        Max Combo: <b>${this.maxCombo}</b> · Avg Time: <b>${avgTime}ms</b> · Fastest: <b>${fastest<Infinity?fastest+'ms':'--'}</b><br>
+        Raw: <b>${raw>0?'+':''}${raw}</b> → <b>${score}</b>/1000
       </div>
       <button class="btn" onclick="Stroop.start()">再来一局</button>
       <button class="btn outline sm" style="margin-left:8px" onclick="App.showDashboard()">返回主页</button>`;
-
     App.updateBestDisplay();
   }
 };
