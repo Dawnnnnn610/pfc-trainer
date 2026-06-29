@@ -544,7 +544,6 @@ const NBack = {
     document.getElementById('resp-col').className = 'resp-btn';
     document.getElementById('nb-restart').style.display = 'none';
     document.getElementById('nb-response').style.display = 'none';
-    this.renderGrid();
 
     if (mode === 'tutorial') {
       this.n = 1; this.gridSize = 3; this.totalTrials = 15;
@@ -562,6 +561,11 @@ const NBack = {
     }
 
     document.getElementById('nb-trial').textContent = '0/' + this.totalTrials;
+    // Pre-set wrap/timer widths BEFORE renderGrid (the HTML inline="width:min(320px)" must be overridden)
+    const w = this.gridSize === 5 ? 'min(420px, 94vw)' : 'min(320px, 80vw)';
+    document.getElementById('nb-grid-wrap').style.width = w;
+    document.getElementById('nb-timer-bar').style.width = w;
+    this.renderGrid();
 
     this._bindRespBtns();
     this._bindStartBtn();
