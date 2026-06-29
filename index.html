@@ -273,6 +273,27 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
 .lb-table .rank { color:var(--yellow); font-weight:700; width:30px; }
 #nav-player { font-size:.8rem; color:var(--text2); margin-left:8px; }
 
+/* ===== Vocab Test ===== */
+.vocab-word {
+  font-size: clamp(40px, 8vw, 64px); font-weight: 900;
+  text-align: center; padding: 24px 0 28px; user-select: none;
+  color: var(--accent); letter-spacing: .04em;
+}
+.vocab-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: min(440px, 90vw); }
+.vocab-opt {
+  padding: 12px 14px; border-radius: var(--radius-sm); border: 2px solid rgba(255,255,255,.1);
+  background: var(--surface2); color: var(--text); cursor: pointer;
+  font-size: .9rem; transition: all .12s; text-align: center;
+  user-select: none; min-height: 50px; display: flex; align-items: center; justify-content: center;
+  line-height: 1.4;
+}
+.vocab-opt:hover { border-color: var(--accent); }
+.vocab-opt:active { transform: scale(.97); }
+.vocab-opt.correct { background: var(--green); border-color: var(--green); color: #000; }
+.vocab-opt.wrong { background: var(--red); border-color: var(--red); color: #fff; }
+.vocab-opt.full-width { grid-column: 1 / -1; }
+.vocab-opt.dunno { border-style: dashed; opacity: .7; }
+
 /* ===== Responsive ===== */
 @media (max-width: 500px) {
   nav { padding: 12px 16px; }
@@ -340,6 +361,12 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
         <h3>Schulte 方格</h3>
         <p>注意力训练。在乱序数字中按顺序快速找到 1 到 25。</p>
         <div class="best">🏆 最佳: <span id="best-schulte">--</span></div>
+      </div>
+      <div class="card" onclick="App.startGame('vocab')">
+        <div class="icon">📖</div>
+        <h3>词汇量测试</h3>
+        <p>自适应无限测试，英语词汇量精准评估。</p>
+        <div class="best">🏆 最佳: <span id="best-vocab">--</span></div>
       </div>
     </div>
   </div>
@@ -479,6 +506,25 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
   <div class="results" id="sc-results" style="display:none"></div>
 </section>
 
+<!-- Vocab Test Game -->
+<section id="game-vocab" class="screen">
+  <div class="game-header">
+    <h2>📖 词汇量测试</h2>
+    <div class="score-area">
+      <div class="stat"><div class="val" id="vc-estimate">--</div><div class="lbl">估算词汇量</div></div>
+      <div class="stat"><div class="val" id="vc-level">--</div><div class="lbl">CEFR 水平</div></div>
+      <div class="stat"><div class="val" id="vc-correct">0/0</div><div class="lbl">正确</div></div>
+    </div>
+  </div>
+  <div class="game-body">
+    <div class="instructions">选择单词的<strong>正确中文释义</strong></div>
+    <div class="vocab-word" id="vc-word"></div>
+    <div class="vocab-options" id="vc-options"></div>
+    <button class="btn outline" id="vc-stop" style="margin-top:12px">📊 结束测试看结果</button>
+  </div>
+  <div class="results" id="vc-results" style="display:none"></div>
+</section>
+
 </main>
 
 <script>
@@ -566,7 +612,7 @@ const Leaderboard = {
   _deleteAll() {
     if (!this._ready || !this.playerId) return;
     try {
-      const paths = ['nback_1','nback_2','nback_3','nback_hell','stroop','schulte_5','schulte_8','schulte_10'];
+      const paths = ['nback_1','nback_2','nback_3','nback_hell','stroop','schulte_5','schulte_8','schulte_10','vocab'];
       const key = this._safeKey(this.playerId);
       paths.forEach(p => {
         firebase.database().ref('leaderboard/' + p + '/' + key).remove();
@@ -635,6 +681,7 @@ const Leaderboard = {
     ['schulte_5', '🔢 5×5'],
     ['schulte_8', '🔢 8×8'],
     ['schulte_10', '🔢 10×10'],
+    ['vocab', '📖 词汇量'],
   ],
 
   _renderTabs() {
@@ -645,6 +692,521 @@ const Leaderboard = {
 
 Leaderboard._renderTabs();
 Leaderboard.init();
+
+// ═══════════════════════════════════════
+//  WORD BANK — 800+ words, ranked by frequency
+//  w=word, m=Chinese meanings, r=frequency rank (lower=simpler), c=confusable words
+// ═══════════════════════════════════════
+const WORD_BANK = [
+// ─── Level 1 (rank 1-500): A1-A2 basic ───
+{w:"the",m:"这;那",r:1,c:["they","them","then"]},
+{w:"be",m:"是;存在",r:2,c:["been","being","bee"]},
+{w:"to",m:"到;向;为了",r:3,c:["too","two","toe"]},
+{w:"of",m:"…的;属于",r:4,c:["off","if","or"]},
+{w:"and",m:"和;与;而且",r:5,c:["end","band","land"]},
+{w:"have",m:"有;拥有",r:8,c:["has","had","haven"]},
+{w:"do",m:"做;干;执行",r:12,c:["due","dew","does"]},
+{w:"say",m:"说;讲;表示",r:14,c:["saw","sad","stay"]},
+{w:"get",m:"得到;变得;到达",r:16,c:["got","gut","bet"]},
+{w:"make",m:"做;制造;使得",r:18,c:["made","bake","male"]},
+{w:"go",m:"去;走;进行",r:20,c:["gone","ago","got"]},
+{w:"know",m:"知道;了解;认识",r:22,c:["known","knew","now"]},
+{w:"take",m:"拿;取;花费",r:24,c:["taken","tale","bake"]},
+{w:"see",m:"看见;明白;理解",r:26,c:["seen","sea","seek"]},
+{w:"come",m:"来;到达;出现",r:28,c:["came","comb","cone"]},
+{w:"think",m:"想;认为;思考",r:30,c:["thank","thin","thing"]},
+{w:"look",m:"看;看起来;寻找",r:32,c:["lock","loom","loot"]},
+{w:"want",m:"想要;需要;希望",r:34,c:["wait","wane","went"]},
+{w:"give",m:"给;给予;提供",r:36,c:["gave","gift","live"]},
+{w:"use",m:"使用;利用;用途",r:38,c:["used","user","us"]},
+{w:"find",m:"找到;发现;觉得",r:40,c:["found","fine","bind"]},
+{w:"tell",m:"告诉;讲述;分辨",r:42,c:["tall","toll","bell"]},
+{w:"ask",m:"问;请求;要求",r:44,c:["task","mask","ark"]},
+{w:"work",m:"工作;劳动;运转",r:46,c:["word","warp","worn"]},
+{w:"seem",m:"似乎;好像;显得",r:48,c:["seen","seam","seek"]},
+{w:"feel",m:"感觉;触摸;认为",r:50,c:["fell","fuel","flee"]},
+{w:"try",m:"尝试;试图;审判",r:52,c:["tray","troy","dry"]},
+{w:"leave",m:"离开;留下;遗忘",r:54,c:["leaf","lean","live"]},
+{w:"call",m:"打电话;称呼;叫",r:56,c:["cell","fall","cull"]},
+{w:"keep",m:"保持;保留;继续",r:58,c:["keen","keel","creep"]},
+{w:"let",m:"让;允许;出租",r:60,c:["led","late","lot"]},
+{w:"begin",m:"开始;着手;启动",r:62,c:["began","begun","being"]},
+{w:"great",m:"伟大的;极好的;大的",r:68,c:["grate","greet","grade"]},
+{w:"important",m:"重要的;重大的",r:74,c:["import","impotent","impose"]},
+{w:"different",m:"不同的;有差异的",r:82,c:["diffident","indifferent","deferent"]},
+{w:"enough",m:"足够的;充分的",r:88,c:["though","through","tough"]},
+{w:"through",m:"通过;穿过;凭借",r:95,c:["thorough","though","throw"]},
+{w:"country",m:"国家;乡村;地区",r:103,c:["county","counter","count"]},
+{w:"example",m:"例子;榜样;范例",r:105,c:["sample","examine","exempt"]},
+{w:"question",m:"问题;疑问;质疑",r:108,c:["quest","suggestion","queue"]},
+{w:"believe",m:"相信;认为;信仰",r:115,c:["belief","relieve","beloved"]},
+{w:"happen",m:"发生;碰巧;出现",r:120,c:["happy","harpen","heaven"]},
+{w:"consider",m:"考虑;认为;思考",r:128,c:["consist","consume","conspire"]},
+{w:"appear",m:"出现;似乎;显得",r:132,c:["appeal","apple","apply"]},
+{w:"expect",m:"期望;预期;等待",r:138,c:["except","expert","exempt"]},
+{w:"experience",m:"经验;体验;经历",r:142,c:["experiment","expertise","expire"]},
+{w:"interest",m:"兴趣;利益;利息",r:148,c:["interstate","interfere","intense"]},
+{w:"special",m:"特殊的;特别的;专门的",r:155,c:["especial","species","spatial"]},
+
+// ─── Level 2 (rank 500-2000): B1 intermediate ───
+{w:"approach",m:"方法;接近;处理",r:520,c:["approve","appraise","reproach"]},
+{w:"argue",m:"争论;辩论;主张",r:535,c:["arguee","auger","argot"]},
+{w:"assume",m:"假设;承担;呈现",r:548,c:["assure","consume","resume"]},
+{w:"avoid",m:"避免;回避;躲开",r:562,c:["void","avid","avail"]},
+{w:"benefit",m:"利益;好处;受益",r:578,c:["beneficial","benevolent","benign"]},
+{w:"claim",m:"声称;要求;索赔",r:592,c:["acclaim","clam","climb"]},
+{w:"compare",m:"比较;对比;比喻",r:608,c:["compete","compile","compose"]},
+{w:"condition",m:"条件;状况;环境",r:625,c:["conditioner","tradition","edition"]},
+{w:"contain",m:"包含;容纳;控制",r:640,c:["container","retain","obtain"]},
+{w:"contribute",m:"贡献;捐献;投稿",r:658,c:["attribute","distribute","tribute"]},
+{w:"convince",m:"说服;使信服",r:670,c:["convict","convey","convincee"]},
+{w:"create",m:"创造;创建;引起",r:685,c:["creative","creak","crease"]},
+{w:"decide",m:"决定;裁决;判断",r:700,c:["desire","divide","decode"]},
+{w:"demonstrate",m:"证明;演示;示威",r:718,c:["demon","remonstrate","detonate"]},
+{w:"describe",m:"描述;形容;描绘",r:735,c:["prescribe","subscribe","inscribe"]},
+{w:"determine",m:"决定;确定;查明",r:748,c:["deter","terminate","examine"]},
+{w:"develop",m:"发展;开发;形成",r:762,c:["envelop","devolve","deliver"]},
+{w:"discover",m:"发现;发觉;找到",r:780,c:["recover","uncover","discourse"]},
+{w:"establish",m:"建立;确立;证实",r:798,c:["abolish","embellish","publish"]},
+{w:"evidence",m:"证据;迹象;证明",r:815,c:["evident","provide","incidence"]},
+{w:"exist",m:"存在;生存;有",r:830,c:["exit","exile","insist"]},
+{w:"explain",m:"解释;说明;阐明",r:848,c:["complain","refrain","expel"]},
+{w:"express",m:"表达;表示;快递",r:862,c:["impress","compress","suppress"]},
+{w:"familiar",m:"熟悉的;常见的;通晓的",r:880,c:["family","similar","feminine"]},
+{w:"figure",m:"数字;人物;图形;认为",r:895,c:["figment","configure","fissure"]},
+{w:"frequent",m:"频繁的;经常的",r:910,c:["subsequent","frenetic","consequent"]},
+{w:"identify",m:"识别;确认;认同",r:928,c:["identity","identical","ideology"]},
+{w:"imagine",m:"想象;设想;猜想",r:945,c:["imagination","image","immune"]},
+{w:"include",m:"包括;包含;计入",r:960,c:["exclude","conclude","prelude"]},
+{w:"indicate",m:"表明;指示;暗示",r:975,c:["dedicate","vindicate","medicate"]},
+{w:"influence",m:"影响;作用;势力",r:992,c:["affluence","influent","effluent"]},
+{w:"inform",m:"通知;告知;报告",r:1010,c:["informal","conform","perform"]},
+{w:"involve",m:"涉及;包含;参与",r:1028,c:["evolve","revolve","devolve"]},
+{w:"maintain",m:"维持;保持;维修",r:1045,c:["contain","obtain","retain"]},
+{w:"measure",m:"测量;衡量;措施",r:1060,c:["treasure","pleasure","leisure"]},
+{w:"mention",m:"提到;提及;说起",r:1078,c:["mansion","dimension","pension"]},
+{w:"observe",m:"观察;遵守;注意到",r:1095,c:["preserve","reserve","deserve"]},
+{w:"obtain",m:"获得;得到;买到",r:1110,c:["contain","retain","abstain"]},
+{w:"occur",m:"发生;出现;存在",r:1125,c:["occurrence","recur","concur"]},
+{w:"opinion",m:"意见;看法;主张",r:1142,c:["option","onion","optimal"]},
+{w:"opportunity",m:"机会;时机;良机",r:1160,c:["opportune","property","prosperity"]},
+{w:"organize",m:"组织;安排;整理",r:1178,c:["organism","orgasm","origami"]},
+{w:"perform",m:"执行;表演;表现",r:1195,c:["reform","conform","perfume"]},
+{w:"period",m:"时期;阶段;周期",r:1210,c:["periodic","parody","peril"]},
+{w:"permit",m:"允许;许可;准许",r:1225,c:["submit","admit","commit"]},
+{w:"persuade",m:"说服;劝说;劝服",r:1240,c:["pursue","dissuade","pervade"]},
+{w:"possess",m:"拥有;具有;占有",r:1255,c:["process","assess","obsess"]},
+{w:"prefer",m:"更喜欢;偏好;宁愿",r:1270,c:["refer","infer","defer"]},
+{w:"prevent",m:"防止;阻止;预防",r:1285,c:["present","pretend","prevalent"]},
+{w:"produce",m:"生产;制造;产生",r:1300,c:["reduce","induce","deduce"]},
+{w:"propose",m:"提议;建议;求婚",r:1315,c:["suppose","dispose","expose"]},
+{w:"prove",m:"证明;证实;表明",r:1330,c:["approve","reprove","probe"]},
+{w:"provide",m:"提供;供给;规定",r:1345,c:["provoke","protect","prevail"]},
+{w:"purpose",m:"目的;意图;用途",r:1360,c:["propose","suppose","impose"]},
+{w:"realize",m:"意识到;实现;了解",r:1375,c:["release","relate","retail"]},
+{w:"receive",m:"收到;接收;接待",r:1390,c:["deceive","conceive","perceive"]},
+{w:"recognize",m:"认出;识别;承认",r:1405,c:["cognize","recount","recline"]},
+{w:"refer",m:"参考;提到;涉及",r:1420,c:["infer","defer","reef"]},
+{w:"reflect",m:"反映;反射;反思",r:1435,c:["deflect","inflect","respect"]},
+{w:"reject",m:"拒绝;排斥;驳回",r:1450,c:["inject","project","eject"]},
+{w:"remain",m:"保持;剩余;停留",r:1465,c:["retain","remind","refrain"]},
+{w:"represent",m:"代表;表示;描绘",r:1480,c:["present","replenish","repent"]},
+{w:"require",m:"需要;要求;命令",r:1495,c:["acquire","enquire","retire"]},
+{w:"research",m:"研究;调查;探索",r:1510,c:["search","reserve","preach"]},
+{w:"resource",m:"资源;财力;办法",r:1525,c:["source","recourse","resort"]},
+{w:"respond",m:"回应;回答;反应",r:1540,c:["correspond","despond","resend"]},
+{w:"result",m:"结果;成果;导致",r:1555,c:["insult","consult","resolute"]},
+{w:"reveal",m:"揭示;透露;显示",r:1570,c:["conceal","repeal","revile"]},
+{w:"scientific",m:"科学的;科学上的",r:1585,c:["scientist","sentient","scenic"]},
+{w:"significant",m:"重要的;显著的;有意义的",r:1600,c:["magnificent","benevolent","efficient"]},
+{w:"similar",m:"相似的;类似的",r:1615,c:["familiar","simulate","singular"]},
+{w:"specific",m:"具体的;特定的;明确的",r:1630,c:["pacific","terrific","specify"]},
+{w:"standard",m:"标准;规范;水准",r:1645,c:["stand","strand","withstand"]},
+{w:"struggle",m:"斗争;挣扎;努力",r:1660,c:["strangle","straggle","smuggle"]},
+{w:"suggest",m:"建议;暗示;表明",r:1675,c:["digest","congest","request"]},
+{w:"suffer",m:"遭受;忍受;受苦",r:1690,c:["supper","buffer","suffice"]},
+{w:"supply",m:"供应;提供;补给",r:1705,c:["apply","reply","multiply"]},
+{w:"support",m:"支持;支撑;供养",r:1720,c:["report","import","sport"]},
+{w:"survive",m:"幸存;存活;生存",r:1735,c:["revive","surge","serve"]},
+{w:"system",m:"系统;体系;制度",r:1750,c:["symptom","syndrome","systolic"]},
+{w:"tend",m:"倾向;趋向;照顾",r:1765,c:["bend","mend","send"]},
+{w:"theory",m:"理论;学说;看法",r:1780,c:["theorem","theater","therapy"]},
+{w:"therefore",m:"因此;所以;因而",r:1795,c:["thereafter","therein","thereof"]},
+{w:"threaten",m:"威胁;恐吓;预示",r:1810,c:["treat","throne","thrive"]},
+{w:"tradition",m:"传统;惯例;传说",r:1825,c:["additional","transition","condition"]},
+{w:"transfer",m:"转移;调动;转让",r:1840,c:["transform","transport","translate"]},
+{w:"treatment",m:"治疗;处理;对待",r:1855,c:["agreement","commitment","treatise"]},
+{w:"various",m:"各种各样的;不同的",r:1870,c:["vicious","vivacious","vacuous"]},
+{w:"view",m:"观点;视野;景色",r:1885,c:["review","preview","interview"]},
+{w:"volunteer",m:"志愿者;自愿者",r:1900,c:["voluntary","vulnerable","voluptuous"]},
+
+// ─── Level 3 (rank 2000-8000): B2 upper-intermediate ───
+{w:"abandon",m:"放弃;抛弃;遗弃",r:2100,c:["abundant","absorb","abridge"]},
+{w:"absolute",m:"绝对的;完全的;十足的",r:2150,c:["obsolete","absolve","resolute"]},
+{w:"abstract",m:"抽象的;摘要;提取",r:2200,c:["extract","detract","contract"]},
+{w:"accompany",m:"陪伴;伴随;陪同",r:2250,c:["accomplish","company","accomplice"]},
+{w:"accomplish",m:"完成;实现;达到",r:2300,c:["accompany","abolish","polish"]},
+{w:"accumulate",m:"积累;积聚;累积",r:2350,c:["simulate","stimulate","emulate"]},
+{w:"accurate",m:"准确的;精确的;正确的",r:2400,c:["curate","obdurate","adequate"]},
+{w:"acknowledge",m:"承认;确认;感谢",r:2450,c:["knowledge","accolade","knack"]},
+{w:"acquire",m:"获得;取得;学到",r:2500,c:["require","inquire","acquit"]},
+{w:"adapt",m:"适应;改编;调整",r:2550,c:["adopt","adept","addict"]},
+{w:"adequate",m:"足够的;适当的;充分的",r:2600,c:["accurate","evaluate","graduate"]},
+{w:"adjust",m:"调整;调节;适应",r:2650,c:["adopt","adult","adjourn"]},
+{w:"administration",m:"管理;行政;政府",r:2700,c:["administrator","ministration","ministry"]},
+{w:"admire",m:"钦佩;赞赏;羡慕",r:2750,c:["admit","require","acquire"]},
+{w:"advocate",m:"提倡;拥护;倡导者",r:2800,c:["allocate","advance","adversary"]},
+{w:"affair",m:"事务;事件;私通",r:2850,c:["affect","affirm","afraid"]},
+{w:"aggressive",m:"侵略的;好斗的;积极的",r:2900,c:["progressive","regressive","oppressive"]},
+{w:"alcohol",m:"酒精;酒;乙醇",r:2950,c:["alchemy","anchor","albeit"]},
+{w:"alternative",m:"替代的;选择的;替代方案",r:3000,c:["native","alteration","allegiance"]},
+{w:"amaze",m:"使惊奇;使惊愕",r:3050,c:["amuse","amass","amazon"]},
+{w:"ambition",m:"野心;雄心;抱负",r:3100,c:["ambiguous","ambient","ambivalent"]},
+{w:"analysis",m:"分析;解析;分解",r:3150,c:["paralysis","synthesis","catalysis"]},
+{w:"announce",m:"宣布;宣告;通知",r:3200,c:["pronounce","denounce","renounce"]},
+{w:"anxiety",m:"焦虑;忧虑;渴望",r:3250,c:["anxious","anomaly","anarchy"]},
+{w:"apparent",m:"明显的;表面上的;显然的",r:3300,c:["parent","transparent","apparatus"]},
+{w:"appreciate",m:"欣赏;感激;领会",r:3350,c:["appropriate","approximate","depreciate"]},
+{w:"appropriate",m:"适当的;合适的;拨出",r:3400,c:["approximate","appreciate","associate"]},
+{w:"approve",m:"批准;同意;认可",r:3450,c:["improve","reprove","approximate"]},
+{w:"arise",m:"出现;产生;升起",r:3500,c:["rise","arouse","arrive"]},
+{w:"aspect",m:"方面;层面;外观",r:3550,c:["respect","inspect","expect"]},
+{w:"assemble",m:"集合;组装;聚集",r:3600,c:["resemble","assembly","dissemble"]},
+{w:"assess",m:"评估;评定;估算",r:3650,c:["access","obsess","possess"]},
+{w:"assign",m:"分配;指派;指定",r:3700,c:["design","resign","assent"]},
+{w:"assist",m:"帮助;协助;援助",r:3750,c:["resist","persist","insist"]},
+{w:"associate",m:"联系;关联;合伙",r:3800,c:["appreciate","dissociate","negotiate"]},
+{w:"atmosphere",m:"气氛;氛围;大气层",r:3850,c:["hemisphere","biosphere","asteroid"]},
+{w:"attach",m:"附上;贴上;系上",r:3900,c:["attack","detach","attract"]},
+{w:"attempt",m:"尝试;企图;试图",r:3950,c:["contempt","tempt","temple"]},
+{w:"attitude",m:"态度;看法;姿势",r:4000,c:["altitude","aptitude","latitude"]},
+{w:"attribute",m:"属性;特质;归因于",r:4050,c:["contribute","distribute","tribute"]},
+{w:"authority",m:"权威;当局;权力",r:4100,c:["author","authentic","auxiliary"]},
+{w:"available",m:"可用的;可获得的;有空的",r:4150,c:["avoidable","advisable","amiable"]},
+{w:"aware",m:"意识到的;知道的;察觉的",r:4200,c:["awake","award","await"]},
+{w:"barrier",m:"障碍;壁垒;屏障",r:4300,c:["carrier","warrior","barrel"]},
+{w:"behavior",m:"行为;举止;表现",r:4400,c:["behavioral","beholder","belabor"]},
+{w:"beneath",m:"在…下面;低于",r:4500,c:["benefit","bereave","bequeath"]},
+{w:"besides",m:"除…之外;此外",r:4600,c:["aside","outside","resides"]},
+{w:"betray",m:"背叛;出卖;泄露",r:4700,c:["portray","array","beware"]},
+{w:"boundary",m:"边界;界限;分界线",r:4800,c:["secondary","foundry","bound"]},
+{w:"budget",m:"预算;经费;编制预算",r:4900,c:["badge","fudget","judge"]},
+{w:"burden",m:"负担;重担;负荷",r:5000,c:["burn","bureau","burial"]},
+{w:"capable",m:"有能力的;能胜任的",r:5100,c:["capability","cape","cable"]},
+{w:"capture",m:"捕获;俘获;占领",r:5200,c:["rapture","caption","fracture"]},
+{w:"category",m:"类别;种类;范畴",r:5300,c:["catalog","catastrophe","catharsis"]},
+{w:"cease",m:"停止;终止;结束",r:5400,c:["crease","ease","lease"]},
+{w:"challenge",m:"挑战;质疑;难题",r:5500,c:["challenger","change","allege"]},
+{w:"characteristic",m:"特征;特点;特性",r:5600,c:["character","charisma","charter"]},
+{w:"circumstance",m:"环境;情况;境遇",r:5700,c:["circumvent","circumference","stance"]},
+{w:"civilization",m:"文明;文化;开化",r:5800,c:["civil","civility","mobilization"]},
+{w:"collapse",m:"倒塌;崩溃;瓦解",r:5900,c:["elapse","relapse","collapse"]},
+{w:"colleague",m:"同事;同僚;同行",r:6000,c:["league","college","collect"]},
+{w:"command",m:"命令;指挥;掌握",r:6100,c:["commend","comment","demand"]},
+{w:"commission",m:"佣金;委员会;委托",r:6200,c:["mission","omission","permission"]},
+{w:"commit",m:"犯;承诺;投入",r:6300,c:["admit","permit","submit"]},
+{w:"communicate",m:"沟通;交流;传达",r:6400,c:["commute","immune","community"]},
+{w:"community",m:"社区;社会;团体",r:6500,c:["immunity","commodity","unity"]},
+{w:"compensate",m:"补偿;赔偿;弥补",r:6600,c:["condensate","compensable","dispensate"]},
+{w:"competition",m:"竞争;比赛;竞赛",r:6700,c:["repetition","composition","petition"]},
+{w:"complaint",m:"投诉;抱怨;申诉",r:6800,c:["compliant","constraint","restraint"]},
+{w:"complex",m:"复杂的;复合的;综合的",r:6900,c:["perplex","duplex","complain"]},
+{w:"component",m:"成分;部件;组成部分",r:7000,c:["opponent","proponent","compound"]},
+{w:"concentrate",m:"集中;专注;浓缩",r:7100,c:["consecrate","conception","contemplate"]},
+{w:"concept",m:"概念;观念;想法",r:7200,c:["precept","accept","except"]},
+{w:"concern",m:"关心;担忧;涉及",r:7300,c:["discern","concert","converse"]},
+{w:"conclude",m:"得出结论;结束;推断",r:7400,c:["include","exclude","preclude"]},
+{w:"conduct",m:"行为;进行;指挥",r:7500,c:["product","deduct","induct"]},
+{w:"conference",m:"会议;讨论会;协商",r:7600,c:["reference","preference","inference"]},
+{w:"confidence",m:"信心;信任;秘密",r:7700,c:["confidante","confidant","residence"]},
+{w:"confirm",m:"确认;证实;批准",r:7800,c:["conform","inform","perform"]},
+
+// ─── Level 4 (rank 8000-20000): C1 advanced ───
+{w:"abolish",m:"废除;取消;废止",r:8200,c:["polish","abort","vanish"]},
+{w:"absurd",m:"荒谬的;可笑的;荒唐的",r:8400,c:["absorb","obscure","assured"]},
+{w:"abuse",m:"滥用;虐待;辱骂",r:8600,c:["amuse","accuse","confuse"]},
+{w:"accelerate",m:"加速;加快;促进",r:8800,c:["accumulate","tolerate","deliberate"]},
+{w:"acute",m:"急性的;敏锐的;严重的",r:9000,c:["cute","execute","persecute"]},
+{w:"adolescent",m:"青少年;青春期的",r:9200,c:["adult","obsolescent","convalescent"]},
+{w:"adverse",m:"不利的;相反的;敌对的",r:9400,c:["averse","advertise","reverse"]},
+{w:"agenda",m:"议程;议事日程",r:9600,c:["agent","agency","ageless"]},
+{w:"allege",m:"声称;断言;指控",r:9800,c:["legend","alley","ledge"]},
+{w:"allocate",m:"分配;拨出;配置",r:10000,c:["locate","collocate","advocate"]},
+{w:"ambiguous",m:"模棱两可的;含糊的",r:10200,c:["ambitious","amphibious","ubiquitous"]},
+{w:"amend",m:"修改;修订;改正",r:10400,c:["emend","mend","amenity"]},
+{w:"analogy",m:"类比;比喻;相似",r:10600,c:["apology","trilogy","catalog"]},
+{w:"anticipate",m:"预期;期望;预料",r:10800,c:["participate","emancipate","dissipate"]},
+{w:"apparatus",m:"仪器;设备;装置",r:11000,c:["apparent","apparel","apparition"]},
+{w:"arbitrary",m:"任意的;武断的;专横的",r:11200,c:["contrary","library","itinerary"]},
+{w:"articulate",m:"清晰表达;发音清晰的",r:11400,c:["calculate","particulate","matriculate"]},
+{w:"assert",m:"断言;声称;坚持主张",r:11600,c:["insert","desert","assent"]},
+{w:"astonish",m:"使惊讶;使吃惊",r:11800,c:["abolish","vanish","finish"]},
+{w:"attain",m:"达到;获得;实现",r:12000,c:["obtain","retain","contain"]},
+{w:"authentic",m:"真实的;可靠的;真正的",r:12200,c:["authority","autistic","automatic"]},
+{w:"benevolent",m:"仁慈的;慈善的;善意的",r:12400,c:["beneficial","malevolent","violent"]},
+{w:"bizarre",m:"奇怪的;古怪的;怪异的",r:12600,c:["bazaar","blizzard","blare"]},
+{w:"boycott",m:"抵制;拒绝参加",r:12800,c:["boyish","cot","coyote"]},
+{w:"bureaucracy",m:"官僚;官僚机构;繁文缛节",r:13000,c:["democracy","autocracy","aristocracy"]},
+{w:"candidate",m:"候选人;应试者;求职者",r:13200,c:["candidacy","candle","candy"]},
+{w:"chronic",m:"慢性的;长期的;积习难改的",r:13400,c:["chronicle","chronicity","chromic"]},
+{w:"coincide",m:"同时发生;巧合;一致",r:13600,c:["coinicide","coincidence","insecticide"]},
+{w:"commence",m:"开始;着手;启动",r:13800,c:["commerce","command","comment"]},
+{w:"commodity",m:"商品;货物;日用品",r:14000,c:["community","immunity","oddity"]},
+{w:"compatible",m:"兼容的;相容的;能共处的",r:14200,c:["comparable","combustible","palpable"]},
+{w:"complacent",m:"自满的;得意的;满足的",r:14400,c:["complaisant","complaint","placement"]},
+{w:"comply",m:"遵守;服从;依从",r:14600,c:["complicate","imply","reply"]},
+{w:"comprehend",m:"理解;领会;包含",r:14800,c:["apprehend","reprehend","compensate"]},
+{w:"compulsory",m:"强制性的;义务的;必修的",r:15000,c:["voluntary","compulsive","temporary"]},
+{w:"concede",m:"承认;让步;给予",r:15200,c:["precede","recede","conceit"]},
+{w:"conceive",m:"构思;想象;怀孕",r:15400,c:["perceive","deceive","receive"]},
+{w:"confine",m:"限制;禁闭;局限",r:15600,c:["define","refine","confide"]},
+{w:"conform",m:"遵守;符合;一致",r:15800,c:["inform","perform","reform"]},
+{w:"conscience",m:"良心;良知;道德心",r:16000,c:["conscious","conscientious","science"]},
+{w:"consequence",m:"后果;结果;重要性",r:16200,c:["sequence","subsequence","eloquence"]},
+{w:"conserve",m:"保存;节约;保护",r:16400,c:["preserve","deserve","reserve"]},
+{w:"consist",m:"由…组成;在于;一致",r:16600,c:["insist","persist","resist"]},
+{w:"conspicuous",m:"显眼的;显著的;引人注目的",r:16800,c:["continuous","contiguous","perspicuous"]},
+{w:"constitute",m:"构成;组成;设立",r:17000,c:["substitute","institute","destitute"]},
+{w:"contemplate",m:"沉思;考虑;凝视",r:17200,c:["contaminate","temple","template"]},
+{w:"contempt",m:"轻视;蔑视;鄙视",r:17400,c:["attempt","tempt","exempt"]},
+{w:"contradict",m:"反驳;矛盾;与…抵触",r:17600,c:["contract","predict","verdict"]},
+{w:"controversy",m:"争论;争议;辩论",r:17800,c:["controversial","converse","cover"]},
+{w:"convenient",m:"方便的;便利的;合适的",r:18000,c:["conventional","convertible","convent"]},
+{w:"convict",m:"定罪;宣判有罪;罪犯",r:18200,c:["convince","evict","victor"]},
+{w:"cooperate",m:"合作;协作;配合",r:18400,c:["coordinate","corporate","operate"]},
+{w:"corrupt",m:"腐败的;贪污的;使堕落",r:18600,c:["interrupt","erupt","disrupt"]},
+{w:"counsel",m:"劝告;建议;法律顾问",r:18800,c:["council","cancel","console"]},
+{w:"criterion",m:"标准;准则;尺度",r:19000,c:["criteria","critical","cremation"]},
+{w:"crucial",m:"关键的;至关重要的;决定性的",r:19200,c:["crucify","social","racial"]},
+{w:"cultivate",m:"培养;种植;教养",r:19400,c:["captivate","activate","motivate"]},
+{w:"curiosity",m:"好奇心;求知欲;珍品",r:19600,c:["generosity","velocity","atrocity"]},
+
+// ─── Level 5 (rank 20000-50000): C2 proficiency ───
+{w:"abrogate",m:"废除;取消",r:22000,c:["arrogate","interrogate","derogate"]},
+{w:"accolade",m:"赞美;荣誉;奖励",r:23000,c:["colleague","college","barricade"]},
+{w:"acerbic",m:"尖刻的;酸的;涩的",r:24000,c:["acetic","ascetic","acerbate"]},
+{w:"acme",m:"顶点;巅峰;极致",r:25000,c:["acne","acre","ache"]},
+{w:"admonish",m:"告诫;警告;劝告",r:26000,c:["astonish","banish","vanish"]},
+{w:"aesthetic",m:"美学的;审美的;艺术的",r:27000,c:["anesthetic","apathetic","synthetic"]},
+{w:"alacrity",m:"敏捷;乐意;爽快",r:28000,c:["veracity","audacity","capacity"]},
+{w:"amalgamate",m:"合并;混合;融合",r:29000,c:["amateur","game","propagate"]},
+{w:"ameliorate",m:"改善;改良;改进",r:30000,c:["deteriorate","elaborate","collaborate"]},
+{w:"anomaly",m:"异常;反常;不规则",r:31000,c:["anatomy","analogy","anonymous"]},
+{w:"apathy",m:"冷漠;冷淡;无兴趣",r:32000,c:["empathy","sympathy","antipathy"]},
+{w:"arduous",m:"艰巨的;费力的;困难的",r:33000,c:["arid","assiduous","innocuous"]},
+{w:"ascertain",m:"确定;查明;弄清",r:34000,c:["curtain","certain","contain"]},
+{w:"assiduous",m:"勤勉的;刻苦的;专心的",r:35000,c:["arduous","ambiguous","superfluous"]},
+{w:"audacious",m:"大胆的;无畏的;厚颜的",r:36000,c:["auspicious","capacious","sagacious"]},
+{w:"auspicious",m:"吉利的;有前途的;幸运的",r:37000,c:["suspicious","audacious","capacious"]},
+{w:"avarice",m:"贪婪;贪财;贪欲",r:38000,c:["avaricious","avariceous","average"]},
+{w:"bellicose",m:"好战的;好斗的;好争吵的",r:39000,c:["belligerent","belle","coerce"]},
+{w:"blithe",m:"快乐的;无忧无虑的;轻率的",r:40000,c:["blight","lithe","writhe"]},
+{w:"burgeon",m:"迅速发展;萌芽;发芽",r:41000,c:["surgeon","burden","urgent"]},
+{w:"cacophony",m:"刺耳的声音;不和谐音",r:42000,c:["symphony","telephony","euphony"]},
+{w:"callous",m:"冷漠的;无情的;硬结的",r:43000,c:["callow","cardous","calm"]},
+{w:"capitulate",m:"投降;屈服;让步",r:44000,c:["capital","capsulate","recapitulate"]},
+{w:"castigate",m:"严厉批评;责骂;惩罚",r:45000,c:["instigate","investigate","mitigate"]},
+{w:"circumspect",m:"谨慎的;小心的;周到的",r:46000,c:["inspect","respect","circumvent"]},
+{w:"coerce",m:"强迫;强制;胁迫",r:47000,c:["commerce","adverse","cohere"]},
+{w:"complaisant",m:"殷勤的;顺从的;讨好的",r:48000,c:["complacent","complaint","pleasant"]},
+{w:"conciliatory",m:"安抚的;和解的;调和的",r:49000,c:["reconciliatory","council","auxiliary"]},
+{w:"conundrum",m:"难题;谜语;复杂问题",r:50000,c:["continuum","condom","column"]},
+];
+
+
+// ===== Vocabulary Test =====
+const VocabTest = {
+  ranked: [],        // WORD_BANK sorted by r
+  floor: 50, ceiling: 40000,
+  totalTried: 0, totalCorrect: 0,
+  running: false,
+  lastWord: null,
+
+  init() {
+    this.ranked = [...WORD_BANK].sort((a,b) => a.r - b.r);
+    this.floor = 50; this.ceiling = 40000;
+    this.totalTried = 0; this.totalCorrect = 0;
+    this.running = true; this.lastWord = null;
+    document.getElementById('vc-estimate').textContent = '--';
+    document.getElementById('vc-level').textContent = '--';
+    document.getElementById('vc-correct').textContent = '0/0';
+    document.getElementById('vc-results').style.display = 'none';
+    document.getElementById('vc-stop').style.display = 'inline-block';
+    this.nextQuestion();
+  },
+
+  _getWord(targetRank) {
+    // Find word closest to targetRank that wasn't just shown
+    let best = this.ranked[0];
+    let bestDist = Infinity;
+    for (const w of this.ranked) {
+      const d = Math.abs(w.r - targetRank);
+      if (d < bestDist && w !== this.lastWord) { bestDist = d; best = w; }
+    }
+    this.lastWord = best;
+    return best;
+  },
+
+  _getConfusableMeanings(word, count) {
+    // Get meanings of confusable words for wrong options
+    const results = [];
+    const used = new Set;
+    used.add(word.m);
+    for (const cw of word.c || []) {
+      const match = this.ranked.find(w => w.w === cw);
+      if (match && match.m !== word.m && !used.has(match.m)) {
+        results.push(match.m);
+        used.add(match.m);
+      }
+      if (results.length >= count) break;
+    }
+    // If not enough from confusables, pick random meanings from nearby rank words
+    if (results.length < count) {
+      const nearby = this.ranked.filter(w => Math.abs(w.r - word.r) < 5000 && w !== word && !used.has(w.m));
+      for (const nw of nearby) {
+        if (results.length >= count) break;
+        if (!used.has(nw.m)) { results.push(nw.m); used.add(nw.m); }
+      }
+    }
+    // Fill remaining from word bank
+    while (results.length < count) {
+      const rw = this.ranked[Math.floor(Math.random() * this.ranked.length)];
+      if (!used.has(rw.m)) { results.push(rw.m); used.add(rw.m); }
+    }
+    return results;
+  },
+
+  nextQuestion() {
+    if (!this.running) return;
+    // Binary search: pick word at midpoint of floor-ceiling range
+    const midRank = Math.round((this.floor + this.ceiling) / 2);
+    const word = this._getWord(midRank);
+    if (!word) return;
+
+    // Build 6 options
+    const correctM = word.m;
+    // Decide: sometimes "none correct" is the answer (~15% of time)
+    const useNoneCorrect = Math.random() < 0.15;
+    const confusables = this._getConfusableMeanings(word, useNoneCorrect ? 4 : 3);
+
+    // Shuffle options
+    let options = [];
+    if (useNoneCorrect) {
+      options = [...confusables, '以上都不正确', '我不知道'];
+    } else {
+      options = [correctM, ...confusables, '以上都不正确', '我不知道'];
+    }
+    // Fisher-Yates shuffle first 4 options only (keep last 2 fixed)
+    const prefix = options.slice(0, 4);
+    for (let i = prefix.length-1; i>0; i--) { const j=Math.floor(Math.random()*(i+1)); [prefix[i],prefix[j]]=[prefix[j],prefix[i]]; }
+    options = [...prefix, options[4], options[5]];
+
+    // Render
+    document.getElementById('vc-word').textContent = word.w;
+
+    const optsEl = document.getElementById('vc-options');
+    optsEl.innerHTML = '';
+    options.forEach((opt, idx) => {
+      const btn = document.createElement('div');
+      btn.className = 'vocab-opt';
+      if (idx >= 4) btn.classList.add('dunno');
+      btn.textContent = opt;
+      btn.addEventListener('click', () => this.answer(word, opt, correctM, btn));
+      optsEl.appendChild(btn);
+    });
+  },
+
+  answer(word, chosen, correctM, btn) {
+    if (!this.running) return;
+    this.totalTried++;
+
+    const isCorrect = (chosen === correctM) || (chosen === '以上都不正确' && chosen !== correctM);
+    // Actually: "none correct" correct when correctM is NOT among first 4 options
+    // We know it was useNoneCorrect mode if correctM not in first 4 rendered
+    const options = Array.from(document.getElementById('vc-options').children);
+    const first4 = options.slice(0, 4).map(o => o.textContent);
+    const isNoneCorrectMode = !first4.includes(correctM);
+    const actuallyCorrect = (chosen === correctM) || (chosen === '以上都不正确' && isNoneCorrectMode);
+
+    if (actuallyCorrect) {
+      this.totalCorrect++;
+      // Expand floor: they know words at least this hard
+      this.floor = Math.max(this.floor, word.r);
+    } else {
+      // Shrink ceiling: they don't know words this hard
+      this.ceiling = Math.min(this.ceiling, word.r - 1);
+      // Flash correct answer
+      const correctIdx = first4.indexOf(correctM);
+      if (correctIdx >= 0) {
+        options[correctIdx].classList.add('correct');
+      } else if (isNoneCorrectMode) {
+        // Highlight "none correct" option (idx 4)
+        options[4].classList.add('correct');
+      }
+    }
+
+    // Mark chosen button
+    if (chosen !== '我不知道') {
+      btn.classList.add(actuallyCorrect ? 'correct' : 'wrong');
+    }
+
+    // Update estimate display
+    const estimate = Math.round((this.floor + this.ceiling) / 2);
+    const display = this.totalTried < 5
+      ? '...评估中...'
+      : estimate.toLocaleString() + ' (' + this._toLevel(estimate) + ')';
+    document.getElementById('vc-estimate').textContent = display;
+    document.getElementById('vc-level').textContent = this.totalTried < 5 ? '--' : this._toLevel(estimate);
+    document.getElementById('vc-correct').textContent = this.totalCorrect + '/' + this.totalTried;
+
+    // Next question after delay
+    setTimeout(() => this.nextQuestion(), 600);
+  },
+
+  _toLevel(est) {
+    if (est < 1500) return 'A1';
+    if (est < 3000) return 'A2';
+    if (est < 5000) return 'B1';
+    if (est < 9000) return 'B2';
+    if (est < 15000) return 'C1';
+    return 'C2';
+  },
+
+  stop() {
+    this.running = false;
+    const est = Math.round((this.floor + this.ceiling) / 2);
+    const level = this._toLevel(est);
+    const acc = this.totalTried > 0 ? Math.round(this.totalCorrect / this.totalTried * 100) : 0;
+    const isNew = Storage.setBest('vocab', est);
+    Leaderboard.upload('vocab', { score: est, detail: level + ' · ' + this.totalCorrect + '/' + this.totalTried });
+
+    document.getElementById('vc-estimate').textContent = est.toLocaleString();
+    document.getElementById('vc-level').textContent = level;
+    document.getElementById('vc-word').textContent = '';
+    document.getElementById('vc-options').innerHTML = '';
+    document.getElementById('vc-stop').style.display = 'none';
+
+    const badges = {
+      'C2':'🏆 Native-like','C1':'🌟 Advanced','B2':'👍 Upper-Intermediate',
+      'B1':'📋 Intermediate','A2':'💪 Elementary','A1':'📚 Beginner'
+    };
+
+    document.getElementById('vc-results').style.display = 'block';
+    document.getElementById('vc-results').innerHTML =
+      `<h3>测试结果</h3>
+      <div class="big-score">${est.toLocaleString()}</div>
+      <div style="font-size:1.5rem;font-weight:700;margin-bottom:4px">${level} · ${badges[level]||''}</div>
+      ${isNew ? '<div class="new-best">🎉 新纪录！</div>' : ''}
+      <div class="details">
+        Range: <b>${this.floor.toLocaleString()}-${this.ceiling.toLocaleString()}</b> · Accuracy: <b>${acc}%</b><br>
+        Questions: <b>${this.totalTried}</b> · Correct: <b>${this.totalCorrect}</b>
+      </div>
+      <button class="btn" onclick="VocabTest.init()">重新测试</button>
+      <button class="btn outline sm" style="margin-left:8px" onclick="App.showDashboard()">返回主页</button>`;
+
+    App.updateBestDisplay();
+  }
+};
 
 // ===== App Controller =====
 const App = {
@@ -671,6 +1233,7 @@ const App = {
       document.getElementById('btn-home').style.display = 'block';
       this.currentGame = game;
       if (game === 'stroop') Stroop.init();
+      if (game === 'vocab') VocabTest.init();
     }
   },
 
@@ -727,6 +1290,9 @@ const App = {
       } else if (g === 'schulte') {
         const bt = Storage.getBestTime('schulte_5');
         el.textContent = bt !== null ? bt.toFixed(1) + 's' : '--';
+      } else if (g === 'vocab') {
+        const b = Storage.getBest('vocab');
+        el.textContent = b !== null ? b.toLocaleString() : '--';
       }
     });
   }
@@ -2095,6 +2661,7 @@ const Schulte = {
 // Hook up non-NBack start buttons
 document.getElementById('st-start').addEventListener('click', () => Stroop.start());
 document.getElementById('st-restart').addEventListener('click', () => Stroop.restart());
+document.getElementById('vc-stop').addEventListener('click', () => VocabTest.stop());
 document.getElementById('sc-start').addEventListener('click', () => {
   if (Schulte.timer) clearInterval(Schulte.timer);
   Schulte.shuffleGrid(); Schulte.renderGrid();
