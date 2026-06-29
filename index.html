@@ -483,7 +483,7 @@ const NBack = {
   n: 2,
   trials: [],       // all trials (warmup + active)
   currentIdx: 0,    // index in trials array
-  totalTrials: 20,  // number of ACTIVE trials (not counting warmup)
+  totalTrials: 10,  // number of ACTIVE trials (not counting warmup)
   trialTimer: null,
   displayMs: 2000,
   itiMs: 400,
@@ -495,7 +495,9 @@ const NBack = {
   tutorialMode: false,
   responseWindowOpen: false,
   missTimer: null,
-  _pend: [], // centralized setTimeout IDs for cleanup
+  trialLocked: false,   // locked after wrong answer
+  graceMs: 800,          // extra time for second key when both match
+  _pend: [],
 
   _schedule(fn, ms) {
     const id = setTimeout(fn, ms);
@@ -746,7 +748,7 @@ const NBack = {
   /* ── Run one trial ── */
   runTrial() {
     if (this.currentIdx >= this.trials.length) { this.finish(); return; }
-    // Clean up only slate timers (don't use _clearAll — we're mid-game)
+    // Clean slate for this trial
     this._pend.forEach(clearTimeout); this._pend = [];
     if (this.trialTimer) { clearTimeout(this.trialTimer); this.trialTimer = null; }
     if (this.missTimer) { clearTimeout(this.missTimer); this.missTimer = null; }
@@ -757,7 +759,6 @@ const NBack = {
     const hasPosMatch = isWarmup ? false : this.posMatch[this.currentIdx];
     const hasColMatch = isWarmup ? false : this.colMatch[this.currentIdx];
 
-    // Update display
     if (isWarmup) {
       document.getElementById('nb-trial').textContent = '暖场 ' + (this.currentIdx + 1) + '/' + this.n;
       document.getElementById('nb-response').style.display = 'none';
@@ -766,40 +767,41 @@ const NBack = {
       document.getElementById('nb-trial').textContent = activeNum + '/' + this.totalTrials;
       document.getElementById('nb-response').style.display = 'flex';
       this.respondedThisTrial = {pos: false, col: false};
+      this.trialLocked = false;
       this.responses.push({pos: false, col: false});
     }
 
     this._showCells(trial);
     this.responseWindowOpen = true;
 
-    // Timer bar animation
+    // Timer bar
     const bar = document.getElementById('nb-timer-fill');
     bar.style.transition = 'none'; bar.style.width = '100%';
     bar.classList.remove('urgent');
-    void bar.offsetWidth; // force reflow
+    void bar.offsetWidth;
     bar.style.transition = 'width ' + (this.displayMs / 1000) + 's linear';
     bar.style.width = '0%';
-    setTimeout(() => { if (this.responseWindowOpen) bar.classList.add('urgent'); }, this.displayMs * 0.7);
+    this._schedule(() => { if (this.responseWindowOpen) bar.classList.add('urgent'); }, this.displayMs * 0.7);
 
     // Phase label
     if (isWarmup) {
-      this._showPhase('warmup', '👀 暖场阶段', '只需观察并记住。' + this.n + '-Back：第 ' + (this.n + 1) + ' 步和第 1 步比较');
+      this._showPhase('warmup', '👀 暖场', this.n + '-Back：第 ' + (this.n + 1) + ' 步和第 1 步比较');
     } else if (this.currentIdx === this.n) {
-      const compareTo = this.currentIdx - this.n + 1;
-      this._showPhase('active-phase', '🎯 答题！', '当前与第 ' + compareTo + ' 步比较');
+      this._showPhase('active-phase', '🎯 答题！', '当前与第 ' + (this.currentIdx - this.n + 1) + ' 步比较');
     }
 
-    // ── Response window: closes after displayMs ──
+    // ── At expiry, evaluate and advance ──
     this.missTimer = this._schedule(() => {
       this.responseWindowOpen = false;
       this._clearCells();
-      bar.style.transition = 'none'; bar.style.width = '0%'; bar.classList.remove('urgent');
+      bar.style.transition = 'none'; bar.style.width = '100%'; bar.classList.remove('urgent');
 
       if (!isWarmup) {
-        if ((hasPosMatch && !this.respondedThisTrial.pos) || (hasColMatch && !this.respondedThisTrial.col)) {
-          this._showMissOverlay(trial.pos, hasPosMatch && !this.respondedThisTrial.pos, hasColMatch && !this.respondedThisTrial.col);
-          this._updateScore();
-        }
+        // Check for misses
+        const mp = hasPosMatch && !this.respondedThisTrial.pos;
+        const mc = hasColMatch && !this.respondedThisTrial.col;
+        if (mp || mc) this._showMissOverlay(trial.pos, mp, mc);
+        this._updateScore();
         document.getElementById('resp-pos').className = 'resp-btn';
         document.getElementById('resp-col').className = 'resp-btn';
         document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.remove('match-hit', 'match-miss'));
@@ -978,103 +980,92 @@ const NBack = {
       if (btn) btn.classList.add('active');
 
       NBack._genTutorialSeq();
-      this._step0();
+      this._showStep();
     },
 
-    _step0() {
-      this.step = 0;
-      const trial = this.seq[0];
-      document.getElementById('nb-guide').innerHTML = this.messages[0];
-      NBack.currentIdx = 0;
-      NBack._showCells(trial);
-      NBack._showPhase('warmup', '👀 暖场 ' + NBack.n + ' 步', '观察并记住，无需操作。' + NBack.n + '-Back：第 ' + (NBack.n + 1) + ' 步和第 1 步比较');
-
-      let w = 1;
-      const showWarmup = () => {
-        if (w >= NBack.n) {
-          NBack._schedule(() => {
-            NBack._clearCells();
-            NBack._schedule(() => {
-              this.step = NBack.n;
-              NBack.currentIdx = NBack.n;
-              this._run();
-            }, 600);
-          }, 1500);
-          return;
-        }
-        NBack._schedule(() => {
-          NBack._clearCells();
-          document.getElementById('nb-guide').innerHTML = this.messages[w];
-          NBack.currentIdx = w;
-          NBack._schedule(() => {
-            NBack._showCells(this.seq[w]);
-            w++;
-            showWarmup();
-          }, 400);
-        }, 1800);
-      };
-      NBack._schedule(() => showWarmup(), 2000);
-    },
-
-    _run() {
+    /* Unified step: handles warmup + active in one loop */
+    _showStep() {
       if (this.step >= this.seq.length) { this._finish(); return; }
-      // Clear slate from previous step (but dont kill the game)
+      // Clean up previous step timers
       NBack._pend.forEach(clearTimeout); NBack._pend = [];
       this._resolved = false;
+      NBack._clearCells();
       document.querySelectorAll('.nback-miss-overlay').forEach(e => e.remove());
-
-      const trial = this.seq[this.step];
-      NBack._showCells(trial);
-      document.getElementById('nb-guide').innerHTML = this.messages[this.step];
-      NBack._showPhase('active-phase', '🎯 答题', '第 ' + (this.step + 1) + ' 步 / 共 ' + this.seq.length);
-
-      const isNeither = !trial.posMatch && !trial.colMatch;
-      document.getElementById('nb-response').style.display = isNeither ? 'none' : 'flex';
       document.getElementById('resp-pos').className = 'resp-btn';
       document.getElementById('resp-col').className = 'resp-btn';
+
+      const trial = this.seq[this.step];
+      const isWarmup = this.step < NBack.n;
+      const isActive = !isWarmup;
+      const isNeither = isActive && !trial.posMatch && !trial.colMatch;
+
+      NBack.currentIdx = this.step;
+      document.getElementById('nb-guide').innerHTML = this.messages[this.step];
+
+      if (isWarmup) {
+        document.getElementById('nb-response').style.display = 'none';
+        NBack._showPhase('warmup', '👀 暖场 ' + (this.step + 1) + '/' + NBack.n, '观察记住，无需操作');
+        document.getElementById('nb-trial').textContent = '暖场 ' + (this.step + 1) + '/' + NBack.n;
+      } else {
+        document.getElementById('nb-response').style.display = isNeither ? 'none' : 'flex';
+        NBack._showPhase('active-phase', '🎯 答题', '第 ' + (this.step + 1) + ' 步 / 共 ' + this.seq.length);
+        document.getElementById('nb-trial').textContent = '答题 ' + (this.step - NBack.n + 1) + '/' + (this.seq.length - NBack.n);
+      }
       this.responded = {pos: false, col: false};
       this.responses.push({pos: false, col: false});
       NBack.respondedThisTrial = {pos: false, col: false};
-      NBack.responseWindowOpen = true;
+      NBack.trialLocked = false;
+
+      NBack._showCells(trial);
+      NBack.responseWindowOpen = isActive;
 
       // Timer bar
       const bar = document.getElementById('nb-timer-fill');
       bar.style.transition = 'none'; bar.style.width = '100%'; bar.classList.remove('urgent');
       void bar.offsetWidth;
-      bar.style.transition = 'width ' + (NBack.displayMs / 1000) + 's linear';
-      bar.style.width = '0%';
-      NBack._schedule(() => { if (NBack.responseWindowOpen) bar.classList.add('urgent'); }, NBack.displayMs * 0.7);
+      if (isActive) {
+        bar.style.transition = 'width ' + (NBack.displayMs / 1000) + 's linear';
+        bar.style.width = '0%';
+        NBack._schedule(() => { if (NBack.responseWindowOpen) bar.classList.add('urgent'); }, NBack.displayMs * 0.7);
+      }
 
+      // At displayMs expiry: evaluate and advance
       NBack._schedule(() => {
+        if (this._resolved) return;
+        this._resolved = true;
         NBack.responseWindowOpen = false;
         NBack._clearCells();
         bar.style.transition = 'none'; bar.style.width = '100%'; bar.classList.remove('urgent');
-        if (this._resolved) return;
-
-        if (isNeither) {
-          this._markCorrect();
-          this._advance();
-          return;
-        }
-        const missedPos = trial.posMatch && !this.responded.pos;
-        const missedCol = trial.colMatch && !this.responded.col;
-        if (missedPos || missedCol) {
-          const cells = document.querySelectorAll('#nb-grid .nback-cell');
-          cells[trial.pos].classList.add('match-miss');
-          const wrap = document.getElementById('nb-grid-wrap');
-          const ov = document.createElement('div');
-          ov.className = 'nback-miss-overlay';
-          if (missedPos && missedCol) ov.textContent = '漏！位置+颜色';
-          else if (missedPos) ov.textContent = '漏！位置';
-          else ov.textContent = '漏！颜色';
-          wrap.appendChild(ov);
-          NBack._schedule(() => ov.remove(), 600);
-          this._markWrong();
-        }
-
         document.getElementById('resp-pos').className = 'resp-btn';
         document.getElementById('resp-col').className = 'resp-btn';
-        document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.remove('match-hit', 'match-miss'));
+
+        if (isWarmup) {
+          this.step++;
+          NBack._schedule(() => this._showStep(), 400);
+        } else if (isNeither) {
+          this._markCorrect();
+          this.step++;
+          NBack._schedule(() => this._showStep(), 600);
+        } else {
+          const mp = trial.posMatch && !this.responded.pos;
+          const mc = trial.colMatch && !this.responded.col;
+          if (mp || mc) {
+            const cells = document.querySelectorAll('#nb-grid .nback-cell');
+            cells[trial.pos].classList.add('match-miss');
+            const wrap = document.getElementById('nb-grid-wrap');
+            const ov = document.createElement('div');
+            ov.className = 'nback-miss-overlay';
+            if (mp && mc) ov.textContent = '漏！位置+颜色';
+            else if (mp) ov.textContent = '漏！位置';
+            else ov.textContent = '漏！颜色';
+            wrap.appendChild(ov);
+            NBack._schedule(() => ov.remove(), 600);
+            this._markWrong();
+            NBack._schedule(() => cells.forEach(c => c.classList.remove('match-miss')), 300);
+          }
+          this.step++;
+          NBack._schedule(() => this._showStep(), 600);
+        }
       }, NBack.displayMs);
     },
 
@@ -1148,7 +1139,7 @@ const NBack = {
       document.getElementById('nb-response').style.display = 'none';
       document.getElementById('resp-pos').className = 'resp-btn';
       document.getElementById('resp-col').className = 'resp-btn';
-      NBack._schedule(() => this._run(), 700);
+      NBack._schedule(() => this._showStep(), 600);
     },
 
     _finish() {
@@ -1186,65 +1177,64 @@ const NBack = {
     this.tutorial.start();
   },
 
-  // Unified respond: route to tutorial or normal mode
+  // Unified respond — normal mode only (tutorial routes separately)
   respond(type) {
-    if (this.tutorialMode) {
-      this.tutorial.respond(type);
-      return;
-    }
+    if (this.tutorialMode) { this.tutorial.respond(type); return; }
     if (!this.running || this.currentIdx < this.n) return;
-    if (!this.responseWindowOpen) {
+    if (!this.responseWindowOpen || this.trialLocked) {
+      // Timer ended or locked — too late
       document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.add('too-late'));
       setTimeout(() => document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.remove('too-late')), 300);
       return;
     }
-    const respIdx = this.responses.length - 1;
-    if (respIdx < 0 || this.respondedThisTrial[type]) return;
-    this.respondedThisTrial[type] = true;
-    this.responses[respIdx][type] = true;
 
     const actual = type === 'pos' ? this.posMatch[this.currentIdx] : this.colMatch[this.currentIdx];
     const btn = document.getElementById(type === 'pos' ? 'resp-pos' : 'resp-col');
-    btn.classList.add(actual ? 'correct' : 'wrong');
-    const trial = this.trials[this.currentIdx];
     const cells = document.querySelectorAll('#nb-grid .nback-cell');
-    cells[trial.pos].classList.add(actual ? 'match-hit' : 'match-miss');
+    const trial = this.trials[this.currentIdx];
 
-    // Immediate feedback + advance: kill the current timer window
-    this.responseWindowOpen = false;
-    this._pend.forEach(clearTimeout); this._pend = [];
-    if (this.missTimer) { clearTimeout(this.missTimer); this.missTimer = null; }
-    this._clearCells();
+    // Already responded for this type? ignore
+    if (this.respondedThisTrial[type]) {
+      // But if it was correct, flash green anyway for feedback
+      if (!actual) { btn.classList.add('wrong'); setTimeout(() => btn.classList.remove('wrong'), 250); }
+      return;
+    }
 
-    // Check if both done or we should wait
-    const needPos = this.posMatch[this.currentIdx], needCol = this.colMatch[this.currentIdx];
-    const bothDone = (!needPos || this.respondedThisTrial.pos) && (!needCol || this.respondedThisTrial.col);
-    // If user pressed wrong (false alarm), reset immediately — show flash then advance
-    if (actual === false) {
-      // False alarm: show MISS overlay
+    this.respondedThisTrial[type] = true;
+    const respIdx = this.responses.length - 1;
+    if (respIdx >= 0) this.responses[respIdx][type] = true;
+
+    if (actual) {
+      // ✅ Correct
+      btn.classList.add('correct');
+      cells[trial.pos].classList.add('match-hit');
+      setTimeout(() => { btn.classList.remove('correct'); cells.forEach(c => c.classList.remove('match-hit')); }, 300);
+    } else {
+      // ❌ Wrong — lock immediately, show error
+      this.trialLocked = true;
+      btn.classList.add('wrong');
+      cells[trial.pos].classList.add('match-miss');
+      setTimeout(() => { btn.classList.remove('wrong'); cells.forEach(c => c.classList.remove('match-miss')); }, 300);
+
       const wrap = document.getElementById('nb-grid-wrap');
       const ov = document.createElement('div');
       ov.className = 'nback-miss-overlay';
       ov.textContent = type === 'pos' ? '❌ 位置虚报' : '❌ 颜色虚报';
       wrap.appendChild(ov);
-      setTimeout(() => ov.remove(), 500);
-      this._updateScore();
+      setTimeout(() => ov.remove(), 600);
     }
-
-    setTimeout(() => {
-      btn.classList.remove('correct', 'wrong');
-      cells.forEach(c => c.classList.remove('match-hit', 'match-miss'));
-    }, 300);
 
     this._updateScore();
 
-    if (bothDone) {
-      // All needed responses done (or false-alarmed): advance immediately
-      document.getElementById('nb-timer-fill').style.width = '100%';
-      document.getElementById('nb-timer-fill').classList.remove('urgent');
-      document.getElementById('resp-pos').className = 'resp-btn';
-      document.getElementById('resp-col').className = 'resp-btn';
-      setTimeout(() => { this.currentIdx++; this.runTrial(); }, 350);
+    // Grace period: if both pos+col match and user only pressed one so far, give extra time
+    const needPos = this.posMatch[this.currentIdx], needCol = this.colMatch[this.currentIdx];
+    if (needPos && needCol && !this.trialLocked) {
+      if ((type === 'pos' && !this.respondedThisTrial.col) || (type === 'col' && !this.respondedThisTrial.pos)) {
+        // Extend the timer bar a bit for the second key
+        const bar = document.getElementById('nb-timer-fill');
+        bar.style.transition = 'width ' + (this.graceMs / 1000) + 's linear';
+        // Don't extend window — just give visual cue
+      }
     }
   }
 };
