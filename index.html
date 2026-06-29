@@ -530,7 +530,7 @@ const Leaderboard = {
     this.playerId = localStorage.getItem('pfc_player') || '';
     if (this.playerId) {
       document.getElementById('login-overlay').style.display = 'none';
-      document.getElementById('nav-player').textContent = '| ' + this.playerId;
+      document.getElementById('nav-player').innerHTML = '| ' + this.playerId + ' <span style="cursor:pointer;color:var(--red);font-size:.7rem" onclick="Leaderboard.logout()">(注销)</span>';
     } else {
       document.getElementById('login-overlay').style.display = 'flex';
     }
@@ -542,7 +542,7 @@ const Leaderboard = {
     this.playerId = name;
     localStorage.setItem('pfc_player', name);
     document.getElementById('login-overlay').style.display = 'none';
-    document.getElementById('nav-player').textContent = '| ' + name;
+    document.getElementById('nav-player').innerHTML = '| ' + name + ' <span style="cursor:pointer;color:var(--red);font-size:.7rem" onclick="Leaderboard.logout()">(注销)</span>';
   },
 
   skip() {
@@ -552,14 +552,26 @@ const Leaderboard = {
     document.getElementById('nav-player').textContent = '';
   },
 
+  logout() {
+    this.playerId = '';
+    localStorage.removeItem('pfc_player');
+    document.getElementById('login-overlay').style.display = 'flex';
+    document.getElementById('nav-player').textContent = '';
+    document.getElementById('lb-overlay').classList.remove('active');
+    // Go back to dashboard
+    App.showDashboard();
+  },
+
   upload(path, data) {
     if (!this._ready || !this.playerId) return;
     try {
-      firebase.database().ref('leaderboard/' + path + '/' + this._safeKey(this.playerId)).set({
-        name: this.playerId,
-        score: data.score,
-        detail: data.detail || '',
-        time: Date.now()
+      const dbRef = firebase.database().ref('leaderboard/' + path + '/' + this._safeKey(this.playerId));
+      // Only update if new score beats previous best
+      dbRef.once('value', snapshot => {
+        const old = snapshot.val();
+        if (!old || data.score > old.score) {
+          dbRef.set({ name: this.playerId, score: data.score, detail: data.detail || '', time: Date.now() });
+        }
       });
     } catch(e) {}
   },
