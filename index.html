@@ -520,7 +520,10 @@ const NBack = {
     if (this.missTimer) { clearTimeout(this.missTimer); this.missTimer = null; }
   },
 
-  COLORS: ['#4da6ff','#4cdf80','#f7545c','#f7c948','#ff8c42','#c084fc'],
+  COLORS: [
+    '#4da6ff','#4cdf80','#f7545c','#f7c948','#ff8c42','#c084fc',
+    '#ff6b9d','#00d4aa','#a78bfa','#fb923c','#38bdf8','#f472b6',
+  ],
 
   // Derive grid size from mode — always 5 for hell, 3 for everything else. No state, no race.
   _gridSize() { return this.mode === 'hell' ? 5 : 3; },
@@ -682,36 +685,92 @@ const NBack = {
     cells[trial.pos].style.backgroundColor = trial.col;
   },
 
-  /* ── Sequence generator ── */
+  /* ── Sequence generator: high randomness, good match-type mix ── */
   generateSequence() {
-    // total trials = warmup (n) + active (totalTrials)
+    const gridN = this._gridSize() * this._gridSize();
     const allCount = this.n + this.totalTrials;
     this.trials = [];
     this.posMatch = [];
     this.colMatch = [];
     this.responses = [];
 
-    for (let i = 0; i < allCount; i++) {
-      let pos, col;
-      if (i >= this.n) {
-        // Active trial: compare to i-n
-        pos = (Math.random() < 0.5)
-          ? this.trials[i - this.n].pos
-          : this._randExcept(this.trials[i - this.n].pos, this._gridSize() * this._gridSize());
-        this.posMatch.push(i >= this.n ? pos === this.trials[i - this.n].pos : false);
+    // Track recent positions and colors to prevent clustering
+    const recentPos = [];    // last 4 positions
+    const recentCol = [];    // last 4 colors
+    const maxRecent = 4;
 
-        col = (Math.random() < 0.5)
-          ? this.trials[i - this.n].col
-          : this._randColorExcept(this.trials[i - this.n].col);
-        this.colMatch.push(i >= this.n ? col === this.trials[i - this.n].col : false);
+    for (let i = 0; i < allCount; i++) {
+      let pos, col, posM, colM;
+
+      if (i >= this.n) {
+        // ── Active trial ──
+        // Enforce match-type distribution: ~25% each of pos-only, col-only, both, neither
+        // Use a rotating pool to guarantee variety
+        const slot = (i - this.n) % 4;
+        const types = ['pos','col','both','neither'];
+        // Shuffle slots so it's not a predictable pattern
+        if (i === this.n) this._typeOrder = [...types].sort(() => Math.random() - 0.5);
+        const matchType = this._typeOrder[slot];
+
+        posM = (matchType === 'pos' || matchType === 'both');
+        colM = (matchType === 'col' || matchType === 'both');
+
+        // Position
+        if (posM) {
+          pos = this.trials[i - this.n].pos;
+        } else {
+          // Pick a position DIFFERENT from i-n, and NOT in recentPos (to spread)
+          let candidates = [];
+          for (let p = 0; p < gridN; p++) {
+            if (p !== this.trials[i - this.n].pos && !recentPos.includes(p)) candidates.push(p);
+          }
+          if (candidates.length === 0) {
+            // Fallback: just exclude i-n pos
+            candidates = [];
+            for (let p = 0; p < gridN; p++) {
+              if (p !== this.trials[i - this.n].pos) candidates.push(p);
+            }
+          }
+          pos = candidates[Math.floor(Math.random() * candidates.length)];
+        }
+
+        // Color
+        if (colM) {
+          col = this.trials[i - this.n].col;
+        } else {
+          let candidates = [];
+          for (const c of this.COLORS) {
+            if (c !== this.trials[i - this.n].col && !recentCol.includes(c)) candidates.push(c);
+          }
+          if (candidates.length === 0) {
+            candidates = this.COLORS.filter(c => c !== this.trials[i - this.n].col);
+          }
+          col = candidates[Math.floor(Math.random() * candidates.length)];
+        }
       } else {
-        // Warmup trial: random, no match needed
-        pos = Math.floor(Math.random() * (this._gridSize() * this._gridSize()));
-        col = this.COLORS[Math.floor(Math.random() * this.COLORS.length)];
-        this.posMatch.push(false);
-        this.colMatch.push(false);
+        // ── Warmup: wide spread ──
+        posM = false; colM = false;
+        let candidates = [];
+        for (let p = 0; p < gridN; p++) {
+          if (!recentPos.includes(p)) candidates.push(p);
+        }
+        if (candidates.length === 0) {
+          candidates = Array.from({length: gridN}, (_, k) => k);
+        }
+        pos = candidates[Math.floor(Math.random() * candidates.length)];
+
+        let colCandidates = this.COLORS.filter(c => !recentCol.includes(c));
+        if (colCandidates.length === 0) colCandidates = [...this.COLORS];
+        col = colCandidates[Math.floor(Math.random() * colCandidates.length)];
       }
+
+      this.posMatch.push(posM);
+      this.colMatch.push(colM);
       this.trials.push({pos, col});
+
+      // Update recent trackers
+      recentPos.push(pos); if (recentPos.length > maxRecent) recentPos.shift();
+      recentCol.push(col); if (recentCol.length > maxRecent) recentCol.shift();
     }
   },
 
