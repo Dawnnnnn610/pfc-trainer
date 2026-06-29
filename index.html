@@ -378,6 +378,33 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
   <div class="results" id="st-results" style="display:none"></div>
 </section>
 
+<!-- Schulte Menu -->
+<section id="game-schulte-menu" class="screen">
+  <div class="game-header">
+    <h2>🔢 Schulte 方格</h2>
+  </div>
+  <div class="nback-menu">
+    <p class="subtitle">选择难度模式</p>
+    <div class="nback-menu-grid">
+      <button class="nback-menu-btn" onclick="App.startSchulte(5)">
+        <div class="icon">5️⃣</div>
+        <div>5×5</div>
+        <small>经典 · 25 个数字</small>
+      </button>
+      <button class="nback-menu-btn" onclick="App.startSchulte(8)">
+        <div class="icon">8️⃣</div>
+        <div>8×8</div>
+        <small>进阶 · 64 个数字</small>
+      </button>
+      <button class="nback-menu-btn hell-btn" onclick="App.startSchulte(10)">
+        <div class="icon">🔟</div>
+        <div>10×10</div>
+        <small>地狱 · 100 个数字</small>
+      </button>
+    </div>
+  </div>
+</section>
+
 <!-- Schulte Game -->
 <section id="game-schulte" class="screen">
   <div class="game-header">
@@ -388,12 +415,12 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
     </div>
   </div>
   <div class="game-body">
-    <div class="instructions">按顺序从 <strong>1</strong> 点到 <strong>25</strong>，越快越好！</div>
+    <div class="instructions">按顺序从 <strong>1</strong> 点到最后，越快越好！</div>
     <div class="schulte-info">
       <div class="next-num">下一个: <span id="sc-next">1</span></div>
     </div>
     <div class="schulte-grid" id="sc-grid"></div>
-    <button class="btn" id="sc-start" style="margin-top:8px">开始 / 重新开始</button>
+    <button class="btn" id="sc-start">开始 / 重新开始</button>
   </div>
   <div class="results" id="sc-results" style="display:none"></div>
 </section>
@@ -437,13 +464,31 @@ const App = {
       document.getElementById('game-nback-menu').classList.add('active');
       document.getElementById('btn-home').style.display = 'block';
       this.currentGame = 'nback-menu';
+    } else if (game === 'schulte') {
+      document.getElementById('game-schulte-menu').classList.add('active');
+      document.getElementById('btn-home').style.display = 'block';
+      this.currentGame = 'schulte-menu';
     } else {
       document.getElementById('game-'+game).classList.add('active');
       document.getElementById('btn-home').style.display = 'block';
       this.currentGame = game;
       if (game === 'stroop') Stroop.init();
-      if (game === 'schulte') Schulte.init();
     }
+  },
+
+  startSchulte(size) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('game-schulte').classList.add('active');
+    document.getElementById('btn-home').style.display = 'block';
+    this.currentGame = 'schulte';
+    Schulte.init(size);
+  },
+
+  showSchulteMenu() {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('game-schulte-menu').classList.add('active');
+    document.getElementById('btn-home').style.display = 'block';
+    this.currentGame = 'schulte-menu';
   },
 
   startNBack(mode) {
@@ -462,9 +507,10 @@ const App = {
   },
 
   goBack() {
-    if (this.currentGame === 'nback') {
-      this.showNBackMenu();
-    } else if (this.currentGame === 'nback-menu') {
+    if (this.currentGame === 'nback' || this.currentGame === 'schulte') {
+      if (this.currentGame === 'nback') this.showNBackMenu();
+      else this.showSchulteMenu();
+    } else if (this.currentGame === 'nback-menu' || this.currentGame === 'schulte-menu') {
       this.showDashboard();
     } else {
       this.showDashboard();
@@ -481,8 +527,8 @@ const App = {
         const b = Storage.getBest('stroop');
         el.textContent = b !== null ? b + ' 分' : '--';
       } else if (g === 'schulte') {
-        const b = Storage.getBestTime('schulte');
-        el.textContent = b !== null ? b.toFixed(1) + 's' : '--';
+        const bt = Storage.getBestTime('schulte_5');
+        el.textContent = bt !== null ? bt.toFixed(1) + 's' : '--';
       }
     });
   }
@@ -1653,6 +1699,8 @@ document.addEventListener('keydown', e => {
 
 // ===== Schulte Table Game =====
 const Schulte = {
+  size: 5,            // 5, 8, or 10
+  total: 25,
   grid: [],
   nextTarget: 1,
   timer: null,
@@ -1660,54 +1708,56 @@ const Schulte = {
   running: false,
   finished: false,
   elapsed: 0,
+  _started: false,    // true once first click happens
 
-  init() {
+  init(size) {
+    this.size = size; this.total = size * size;
     this.nextTarget = 1; this.elapsed = 0;
-    this.running = false; this.finished = false;
+    this.running = false; this.finished = false; this._started = false;
     if (this.timer) clearInterval(this.timer);
     document.getElementById('sc-time').textContent = '0.0s';
     document.getElementById('sc-next').textContent = '1';
-    document.getElementById('sc-start').style.display = 'block';
+    document.getElementById('sc-start').style.display = 'inline-block';
     document.getElementById('sc-results').style.display = 'none';
-    document.getElementById('sc-best-disp').textContent = (Storage.getBestTime('schulte') || '--') + 's';
+    const key = 'schulte_' + size;
+    const b = Storage.getBestTime(key);
+    document.getElementById('sc-best-disp').textContent = (b ? b.toFixed(1) : '--') + 's';
+    // Shuffle now for display, re-shuffle on start click
     this.shuffleGrid();
     this.renderGrid();
-    // No auto-highlight - player must find the next number
   },
 
   shuffleGrid() {
-    this.grid = Array.from({length: 25}, (_, i) => i + 1);
-    // Fisher-Yates shuffle
-    for (let i = this.grid.length - 1; i > 0; i--) {
+    const n = this.total;
+    this.grid = Array.from({length: n}, (_, i) => i + 1);
+    for (let i = n - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [this.grid[i], this.grid[j]] = [this.grid[j], this.grid[i]];
     }
   },
 
   renderGrid() {
-    const gridEl = document.getElementById('sc-grid');
-    gridEl.innerHTML = '';
+    const g = document.getElementById('sc-grid');
+    const s = this.size;
+    g.style.gridTemplateColumns = 'repeat(' + s + ', 1fr)';
+    g.style.width = s > 5 ? 'min(' + (s * 52) + 'px, 96vw)' : 'min(360px, 85vw)';
+    g.style.gap = s > 5 ? '4px' : '6px';
+    g.innerHTML = '';
     this.grid.forEach(num => {
-      const cell = document.createElement('div');
-      cell.className = 'schulte-cell';
-      cell.textContent = num;
-      cell.dataset.num = num;
-      cell.addEventListener('click', () => this.clickCell(cell, num));
-      gridEl.appendChild(cell);
+      const c = document.createElement('div');
+      c.className = 'schulte-cell';
+      c.textContent = num;
+      c.style.fontSize = s > 5 ? 'clamp(10px, ' + (3 - s * 0.15) + 'vw, 16px)' : '';
+      c.dataset.num = num;
+      c.addEventListener('click', () => this.clickCell(c, num));
+      g.appendChild(c);
     });
-    // Don't auto-highlight - let player search for numbers
-  },
-
-  updateNextHighlight() {
-    // Removed: auto-highlighting made the game too easy.
-    // Player must visually scan for the next number themselves.
   },
 
   clickCell(cell, num) {
     if (this.finished) return;
-
-    // Start timer on first click
-    if (!this.running) {
+    if (!this._started) {
+      this._started = true;
       this.running = true;
       this.startTime = performance.now();
       this.timer = setInterval(() => {
@@ -1719,9 +1769,8 @@ const Schulte = {
     if (num === this.nextTarget) {
       cell.classList.add('found');
       this.nextTarget++;
-      document.getElementById('sc-next').textContent = this.nextTarget <= 25 ? this.nextTarget : '✓';
-      this.updateNextHighlight();
-      if (this.nextTarget > 25) this.finish();
+      document.getElementById('sc-next').textContent = this.nextTarget <= this.total ? this.nextTarget : '✓';
+      if (this.nextTarget > this.total) this.finish();
     } else {
       cell.classList.add('shake');
       setTimeout(() => cell.classList.remove('shake'), 300);
@@ -1729,25 +1778,24 @@ const Schulte = {
   },
 
   finish() {
-    this.finished = true;
-    this.running = false;
+    this.finished = true; this.running = false;
     if (this.timer) clearInterval(this.timer);
     this.elapsed = (performance.now() - this.startTime) / 1000;
     document.getElementById('sc-time').textContent = this.elapsed.toFixed(1) + 's';
 
-    const isNew = Storage.setBestTime('schulte', this.elapsed);
+    const key = 'schulte_' + this.size;
+    const isNew = Storage.setBestTime(key, this.elapsed);
+    const label = this.size + '×' + this.size;
 
-    const results = document.getElementById('sc-results');
-    results.style.display = 'block';
-    results.innerHTML = `
-      <h3>完成！</h3>
+    document.getElementById('sc-results').style.display = 'block';
+    document.getElementById('sc-results').innerHTML =
+      `<h3>完成！</h3>
       <div class="big-score">${this.elapsed.toFixed(1)}s</div>
       ${isNew ? '<div class="new-best">🎉 新纪录！</div>' : ''}
-      <div class="details">最佳记录: <b>${(Storage.getBestTime('schulte') || this.elapsed).toFixed(1)}s</b></div>
-      <button class="btn" onclick="Schulte.init()">再来一局</button>
-      <button class="btn outline sm" style="margin-left:8px" onclick="App.showDashboard()">返回主页</button>
-    `;
-    document.getElementById('sc-best-disp').textContent = (Storage.getBestTime('schulte') || this.elapsed).toFixed(1) + 's';
+      <div class="details">${label} · Best: <b>${(Storage.getBestTime(key) || this.elapsed).toFixed(1)}s</b></div>
+      <button class="btn" onclick="Schulte.init(Schulte.size)">再来一局</button>
+      <button class="btn outline sm" style="margin-left:8px" onclick="App.showSchulteMenu()">返回菜单</button>`;
+    document.getElementById('sc-best-disp').textContent = (Storage.getBestTime(key) || this.elapsed).toFixed(1) + 's';
     App.updateBestDisplay();
   }
 };
@@ -1756,7 +1804,15 @@ const Schulte = {
 // Hook up non-NBack start buttons
 document.getElementById('st-start').addEventListener('click', () => Stroop.start());
 document.getElementById('st-restart').addEventListener('click', () => Stroop.restart());
-document.getElementById('sc-start').addEventListener('click', () => Schulte.init());
+document.getElementById('sc-start').addEventListener('click', () => {
+  Schulte.shuffleGrid(); Schulte.renderGrid();
+  Schulte.nextTarget = 1; Schulte.elapsed = 0;
+  Schulte.running = false; Schulte.finished = false; Schulte._started = false;
+  if (Schulte.timer) clearInterval(Schulte.timer);
+  document.getElementById('sc-time').textContent = '0.0s';
+  document.getElementById('sc-next').textContent = '1';
+  document.getElementById('sc-results').style.display = 'none';
+});
 
 // Initial best scores display
 App.updateBestDisplay();
