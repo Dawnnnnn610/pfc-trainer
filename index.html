@@ -187,7 +187,13 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
 .stroop-word {
   font-size: clamp(42px, 8vw, 72px); font-weight: 900; text-align: center;
   letter-spacing: .05em; line-height: 1.2; user-select: none;
-  transition: transform .1s ease-out, color .15s ease;
+  transition: color .15s ease;
+}
+.stroop-word.pop { animation: wordPop .35s ease-out; }
+@keyframes wordPop {
+  0% { transform: scale(1.3); opacity: 0.3; }
+  50% { transform: scale(0.95); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
 }
 .stroop-buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: min(380px, 90vw); }
 .stroop-btn {
@@ -1387,6 +1393,7 @@ const Stroop = {
   correct: 0,
   incorrect: 0,
   running: false,
+  answered: false,
 
   init() {
     this.score = 0; this.combo = 0; this.maxCombo = 0;
@@ -1410,7 +1417,6 @@ const Stroop = {
       btn.textContent = w.char;
       btn.style.backgroundColor = w.color;
       btn.style.color = w.name === 'yellow' || w.name === 'white' ? '#000' : '#fff';
-      btn.addEventListener('pointerdown', e => { e.preventDefault(); this.answer(w.name); });
       btn.addEventListener('click', e => { e.preventDefault(); this.answer(w.name); });
       container.appendChild(btn);
     });
@@ -1470,22 +1476,23 @@ const Stroop = {
     el.style.color = trial.word.name === 'white' ? '#f1f5f9' :
                     {red:'#ef4444',blue:'#3b82f6',green:'#22c55e',yellow:'#eab308',purple:'#a855f7',orange:'#f97316',white:'#f1f5f9'}[trial.displayColor];
 
-    // Pop animation
-    el.style.transform = 'scale(1.15)';
-    setTimeout(() => { el.style.transform = 'scale(1)'; }, 100);
+    // Pop animation (CSS keyframe, no JS reset needed)
+    el.classList.remove('pop');
+    void el.offsetWidth;
+    el.classList.add('pop');
 
     // Start the clock
     this.trialStart = performance.now();
+    this.answered = false;
   },
 
   answer(color) {
-    if (!this.running) return;
+    if (!this.running || this.answered) return;
+    this.answered = true;
+
+    const ms = performance.now() - this.trialStart;
     const trial = this.trials[this.currentTrial];
     const correct = color === trial.displayColor;
-    const ms = performance.now() - this.trialStart;
-
-    // Prevent double answer
-    if (this.responses.length > this.currentTrial) return; // already responded
     this.responses.push({correct, ms});
 
     // Flash the word
