@@ -621,7 +621,8 @@ const Leaderboard = {
 
 // Render LB tabs on page load
 Leaderboard._renderTabs();
-Leaderboard.init();
+// Delay Firebase init until module loads
+setTimeout(() => Leaderboard.init(), 500);
 
 // ===== App Controller =====
 const App = {
