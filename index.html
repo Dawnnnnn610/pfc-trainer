@@ -205,12 +205,6 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
   font-size: clamp(28px, 6vw, 44px); font-weight: 900;
   transition: color .15s ease;
 }
-.stroop-cell.word-cell.pop { animation: wordPop .35s ease-out; }
-@keyframes wordPop {
-  0% { transform: scale(1.3); opacity: 0.3; }
-  50% { transform: scale(0.95); opacity: 1; }
-  100% { transform: scale(1); opacity: 1; }
-}
 .stroop-timer-bar {
   width: min(320px, 80vw); height: 4px; background: rgba(255,255,255,.08);
   border-radius: 2px; margin: 0 auto 8px; overflow: hidden;
@@ -1420,7 +1414,6 @@ const Stroop = {
     document.getElementById('st-score').textContent = '0';
     document.getElementById('st-progress').textContent = '0/' + this.totalTrials;
     document.getElementById('st-combo').textContent = '--';
-    document.getElementById('st-word-cell').textContent = '';
     document.getElementById('st-timer-fill').style.width = '100%';
     document.getElementById('st-timer-fill').classList.remove('urgent');
     document.getElementById('st-start').style.display = 'inline-block';
@@ -1499,7 +1492,6 @@ const Stroop = {
     const el = document.getElementById('st-word-cell');
     el.textContent = t.word.char;
     el.style.color = this.COLORS[t.displayColor];
-    el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
 
     // Timer bar
     const bar = document.getElementById('st-timer-fill');
@@ -1620,7 +1612,6 @@ const Stroop = {
     const badges = {S:'🏆 Outstanding',A:'🌟 Excellent',B:'👍 Good',C:'📋 Average',D:'💪 Below Avg',F:'📚 Practice'};
     const avgTime = this.responses.length > 0 ? Math.round(totalTime / this.responses.length) : 0;
 
-    document.getElementById('st-word-cell').textContent = '';
     document.getElementById('st-combo').textContent = '--';
     document.getElementById('st-start').style.display = 'none';
     document.getElementById('st-restart').style.display = 'none';
