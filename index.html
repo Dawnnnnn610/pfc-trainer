@@ -553,13 +553,25 @@ const Leaderboard = {
   },
 
   logout() {
+    if (!confirm('注销将清空你的所有排行榜数据，不可恢复。确定注销？')) return;
+    this._deleteAll();
     this.playerId = '';
     localStorage.removeItem('pfc_player');
     document.getElementById('login-overlay').style.display = 'flex';
     document.getElementById('nav-player').textContent = '';
     document.getElementById('lb-overlay').classList.remove('active');
-    // Go back to dashboard
     App.showDashboard();
+  },
+
+  _deleteAll() {
+    if (!this._ready || !this.playerId) return;
+    try {
+      const paths = ['nback_1','nback_2','nback_3','nback_hell','stroop','schulte_5','schulte_8','schulte_10'];
+      const key = this._safeKey(this.playerId);
+      paths.forEach(p => {
+        firebase.database().ref('leaderboard/' + p + '/' + key).remove();
+      });
+    } catch(e) {}
   },
 
   upload(path, data) {
