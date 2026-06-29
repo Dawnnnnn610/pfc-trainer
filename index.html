@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -154,11 +154,10 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
 }
 .schulte-cell:hover { border-color: var(--accent); }
 .schulte-cell.found { background: var(--accent); border-color: var(--accent); opacity: .5; cursor: default; }
-.schulte-cell.next { border-color: var(--accent); box-shadow: 0 0 12px rgba(124,111,247,.4); }
 .schulte-cell.shake { animation: shake .3s ease; border-color: var(--red); }
 @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 50%{transform:translateX(4px)} 75%{transform:translateX(-4px)} }
 .schulte-info { display: flex; gap: 20px; align-items: center; margin-bottom: 12px; }
-.schulte-info .next-num { font-size: 2rem; font-weight: 700; color: var(--accent); }
+.schulte-info .next-num { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
 .schulte-info .timer { font-size: 1.4rem; font-weight: 600; color: var(--text2); }
 
 /* ===== Results ===== */
@@ -175,6 +174,37 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
   background: var(--surface2); border: 1px solid rgba(255,255,255,.15);
   border-radius: 4px; padding: 2px 7px; font-size: .8rem; color: var(--text);
 }
+
+/* ===== Tutorial Modal ===== */
+.tutorial-overlay {
+  display: none; position: fixed; inset: 0; z-index: 100;
+  background: rgba(0,0,0,.75); justify-content: center; align-items: center;
+  padding: 20px;
+}
+.tutorial-overlay.active { display: flex; }
+.tutorial-card {
+  background: var(--surface); border: 1px solid rgba(255,255,255,.1);
+  border-radius: var(--radius); padding: 32px; max-width: 500px; width: 100%;
+  animation: fadeIn .3s ease;
+}
+.tutorial-card h3 { font-size: 1.3rem; margin-bottom: 20px; text-align: center; }
+.tutorial-content { margin-bottom: 24px; }
+.tutorial-step { display: flex; gap: 14px; margin-bottom: 16px; align-items: flex-start; }
+.tutorial-step .step-num {
+  flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%;
+  background: var(--accent); color: #fff; display: flex; align-items: center;
+  justify-content: center; font-weight: 700; font-size: .9rem;
+}
+.tutorial-step div:last-child { line-height: 1.6; color: var(--text2); font-size: .92rem; }
+.tutorial-step div:last-child strong { color: var(--text); }
+.tutorial-step kbd {
+  background: var(--surface2); border: 1px solid rgba(255,255,255,.15);
+  border-radius: 4px; padding: 2px 7px; font-size: .8rem; color: var(--accent);
+}
+.tutorial-card .btn { width: 100%; }
+
+/* ===== Stroop word pop ===== */
+.stroop-word { transition: transform .1s ease-out; }
 
 /* ===== Responsive ===== */
 @media (max-width: 500px) {
@@ -246,6 +276,7 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
       <div class="resp-btn" id="resp-col">🎨 颜色匹配<span class="key">按键 L</span></div>
     </div>
     <button class="btn" id="nb-start" style="margin-top:8px">开始训练</button>
+    <button class="btn outline sm" id="nb-how" style="margin-top:8px;margin-left:8px" onclick="NBack.showTutorial()">❓ 怎么玩</button>
   </div>
   <div class="results" id="nb-results" style="display:none"></div>
 </section>
@@ -293,6 +324,32 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
   </div>
   <div class="results" id="sc-results" style="display:none"></div>
 </section>
+
+<!-- ===== N-Back Tutorial Modal ===== -->
+<div class="tutorial-overlay" id="nb-tutorial">
+  <div class="tutorial-card">
+    <h3>🧩 Dual N-Back 怎么玩？</h3>
+    <div class="tutorial-content">
+      <div class="tutorial-step">
+        <div class="step-num">1</div>
+        <div>屏幕上 3×3 格子会<strong>依次亮起</strong>，每个同时有<strong>位置</strong>和<strong>颜色</strong>。</div>
+      </div>
+      <div class="tutorial-step">
+        <div class="step-num">2</div>
+        <div>你需要判断：<strong>现在亮的</strong>和 <strong>N 步之前亮的</strong>是否相同。</div>
+      </div>
+      <div class="tutorial-step">
+        <div class="step-num">3</div>
+        <div>如果<strong>位置</strong>相同 → 按 <kbd>A</kbd>；如果<strong>颜色</strong>相同 → 按 <kbd>L</kbd>。</div>
+      </div>
+      <div class="tutorial-step">
+        <div class="step-num">💡</div>
+        <div>比如 2-Back：你看到第 3 个格子，就要和第 1 个格子比。位置和颜色各自独立判断——可能都有匹配，可能都没有，也可能只有一项匹配。</div>
+      </div>
+    </div>
+    <button class="btn" onclick="document.getElementById('nb-tutorial').classList.remove('active')">我懂了，开始训练！</button>
+  </div>
+</div>
 
 </main>
 
@@ -380,6 +437,10 @@ const NBack = {
   colMatch: [],  // true/false per trial
   running: false,
   respondedThisTrial: {pos: false, col: false},
+
+  showTutorial() {
+    document.getElementById('nb-tutorial').classList.add('active');
+  },
 
   init() {
     this.n = 2;
@@ -690,22 +751,34 @@ const Stroop = {
     }, 1000);
   },
 
+
+  lastWord: null,
+
+  cssColor(c) {
+    const map = {red:'#ff4444', blue:'#4499ff', green:'#44dd66', yellow:'#ffaa22'};
+    return map[c] || c;
+  },
+
   nextWord() {
-    // Pick a random word and a different random display color
-    const word = this.words[Math.floor(Math.random() * this.words.length)];
+    // Pick a word different from last, and a display color different from word meaning
+    let word;
+    do { word = this.words[Math.floor(Math.random() * this.words.length)]; }
+    while (word === this.lastWord && this.words.length > 1);
+    this.lastWord = word;
+
     let color;
     do { color = this.words[Math.floor(Math.random() * this.words.length)]; }
     while (color.color === word.color);
+
     this.displayColor = color.color;
 
     const el = document.getElementById('st-word');
     el.textContent = word.char;
     el.style.color = this.cssColor(color.color);
-  },
-
-  cssColor(c) {
-    const map = {red:'#e74c3c', blue:'#3498db', green:'#2ecc71', yellow:'#f39c12'};
-    return map[c] || c;
+    // Pop animation to show the word changed
+    el.style.transform = 'scale(1.15)';
+    el.style.transition = 'transform 0.1s ease-out';
+    setTimeout(() => { el.style.transform = 'scale(1)'; }, 100);
   },
 
   answer(color) {
@@ -797,6 +870,7 @@ const Schulte = {
     document.getElementById('sc-best-disp').textContent = (Storage.getBestTime('schulte') || '--') + 's';
     this.shuffleGrid();
     this.renderGrid();
+    // No auto-highlight - player must find the next number
   },
 
   shuffleGrid() {
@@ -819,17 +893,12 @@ const Schulte = {
       cell.addEventListener('click', () => this.clickCell(cell, num));
       gridEl.appendChild(cell);
     });
-    // Highlight the first target
-    this.updateNextHighlight();
+    // Don't auto-highlight - let player search for numbers
   },
 
   updateNextHighlight() {
-    document.querySelectorAll('#sc-grid .schulte-cell').forEach(c => {
-      c.classList.remove('next');
-      if (!c.classList.contains('found') && parseInt(c.dataset.num) === this.nextTarget) {
-        c.classList.add('next');
-      }
-    });
+    // Removed: auto-highlighting made the game too easy.
+    // Player must visually scan for the next number themselves.
   },
 
   clickCell(cell, num) {
@@ -891,6 +960,11 @@ document.getElementById('btn-home').addEventListener('click', () => App.showDash
 document.getElementById('nb-start').addEventListener('click', () => NBack.start());
 document.getElementById('st-start').addEventListener('click', () => Stroop.start());
 document.getElementById('sc-start').addEventListener('click', () => Schulte.init());
+
+// Tutorial overlay: click outside to close
+document.getElementById('nb-tutorial').addEventListener('click', function(e) {
+  if (e.target === this) this.classList.remove('active');
+});
 
 // Initial best scores display
 App.updateBestDisplay();
