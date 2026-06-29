@@ -3710,28 +3710,40 @@ const WORD_BANK = [
 {w:"best",m:" a.最好的；最大的",r:5358},
 ];
 // ===== Vocabulary Test V4 — IRT estimation + reaction-time scoring =====
+// ===== Vocabulary Test V5 — 20 bucket IRT + probe + layered ordering =====
 const VocabTest = {
-  ranked: [],          // shuffled copy of WORD_BANK
-  wordScores: null,    // Map: word.w → IRT difficulty estimate
-  theta: 1000,         // player ability (higher = larger vocab). Initial ~B1 level
-  totalTried: 0, totalCorrect: 0,
-  totalTime: 0,        // cumulative reaction ms
+  ranked: [],          // shuffled WORD_BANK
+  wordScores: null,    // Map: word.w → rank (difficulty)
+  buckets: [],         // 20 difficulty buckets
+  theta: 1000,         // player ability estimate
+  totalTried: 0, totalCorrect: 0, totalTime: 0,
   running: false,
   seenWords: null,
   _timer: null, _trialStart: 0,
-  K: 80,               // IRT adjustment rate (dampens over time)
+  K: 80,
+  probeCount: 0,
+  streakCorrect: 0,
 
   init() {
-    // Shuffle entire bank for full randomness every session
     const all = [...WORD_BANK];
     for (let i=all.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[all[i],all[j]]=[all[j],all[i]];}
     this.ranked = all;
     this.wordScores = new Map();
     for (const w of all) this.wordScores.set(w.w, w.r);
 
-    this.theta = 1000; this.K = 80;
+    // 20 fine-grained buckets by log rank
+    this.buckets = [];
+    for (let i=0; i<20; i++) this.buckets.push([]);
+    for (const w of all) {
+      const b = Math.min(19, Math.max(0, Math.floor(Math.log2(w.r/100+1) / Math.log2(500) * 20)));
+      this.buckets[b].push(w);
+    }
+    for (const b of this.buckets) { for (let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];} }
+
+    this.theta = 500; this.K = 80;
     this.totalTried = 0; this.totalCorrect = 0; this.totalTime = 0;
     this.running = true; this.seenWords = new Set();
+    this.probeCount = 0; this.streakCorrect = 0;
     document.getElementById('vc-estimate').textContent = '...评估中...';
     document.getElementById('vc-level').textContent = '--';
     document.getElementById('vc-correct').textContent = '0/0';
@@ -3740,226 +3752,108 @@ const VocabTest = {
     this.nextQuestion();
   },
 
+  _getBucket(theta) { return Math.min(19, Math.max(0, Math.floor(Math.log2(theta/100+1) / Math.log2(500) * 20))); },
+
   _pickWord() {
-    // Pick word whose r is closest to current theta estimate
-    // But: never repeat, and add randomness to avoid predicting pattern
-    const target = this.theta;
-    const candidates = this.ranked.filter(w => !this.seenWords.has(w.w));
-    if (candidates.length === 0) {
-      for (const w of this.ranked) this.seenWords.delete(w.w);
-      return this.ranked[Math.floor(Math.random() * this.ranked.length)];
-    }
-    // Sort by distance to target, pick from top 8 candidates randomly
-    candidates.sort((a,b) => Math.abs(a.r - target) - Math.abs(b.r - target));
-    const top = candidates.slice(0, Math.min(12, candidates.length));
-    return top[Math.floor(Math.random() * top.length)];
+    const targetBucket = this._getBucket(this.theta);
+    // 80%: stay near ability (±2 buckets)
+    // 15%: probe 2-5 buckets higher
+    // 5%: wildcard
+    const roll = Math.random();
+    let lo, hi;
+    if (roll < 0.80) { const j=Math.floor(Math.random()*5)-2; lo=Math.max(0,targetBucket+j-1); hi=Math.min(19,targetBucket+j+1); }
+    else if (roll < 0.95) { lo=Math.min(19,targetBucket+2); hi=Math.min(19,targetBucket+5); }
+    else { lo=Math.max(0,targetBucket-4); hi=Math.min(19,targetBucket+6); }
+
+    let pool = [];
+    for (let b=lo; b<=hi; b++) { for (const w of this.buckets[b]||[]) { if (!this.seenWords.has(w.w)) pool.push(w); } }
+    if (pool.length===0) pool=this.ranked.filter(w=>!this.seenWords.has(w.w));
+    if (pool.length===0) { for (const w of this.ranked) this.seenWords.delete(w.w); pool=[...this.ranked]; }
+    pool.sort((a,b)=>Math.abs(a.r-this.theta)-Math.abs(b.r-this.theta));
+    const pick=Math.min(12,pool.length);
+    return pool[Math.floor(Math.random()*pick)];
   },
 
   _getConfusableMeanings(word, count) {
-    const results = []; const used = new Set; used.add(word.m);
-    // 1. Same prefix words (most confusable)
-    const prefix = word.w.slice(0, 3).toLowerCase();
-    for (const w of this.ranked) {
-      if (w.w === word.w || used.has(w.m)) continue;
-      if (w.w.toLowerCase().startsWith(prefix) && w.m !== word.m) { results.push(w.m); used.add(w.m); }
-      if (results.length >= count) break;
-    }
-    // 2. Same-length words as distractors
-    if (results.length < count) {
-      const tlen = word.w.length;
-      for (const w of this.ranked) {
-        if (w.w === word.w || used.has(w.m)) continue;
-        if (Math.abs(w.w.length - tlen) <= 1 && !w.w.toLowerCase().startsWith(prefix)) {
-          results.push(w.m); used.add(w.m);
-        }
-        if (results.length >= count) break;
-      }
-    }
-    // 3. Random words from bank, ensuring no duplicates
-    if (results.length < count) {
-      const pool = this.ranked.filter(w => w.w !== word.w && !used.has(w.m));
-      for (let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
-      for (const w of pool) {
-        if (results.length >= count) break;
-        if (!used.has(w.m)) { results.push(w.m); used.add(w.m); }
-      }
-    }
-    // 4. Fabricated distractors only as last resort
-    const fakePool = ['快速移动','缓慢下降','突然出现','大声说话','安静思考','逐渐消失','猛烈攻击','温柔对待','坚定拒绝','勉强接受','秘密调查','公开声明','完美呈现','粗糙制作','精确计算','随意安排'];
-    while (results.length < count) {
-      const f = fakePool[Math.floor(Math.random() * fakePool.length)];
-      if (!used.has(f)) { results.push(f); used.add(f); }
-    }
+    const results=[],used=new Set; used.add(word.m);
+    const prefix=word.w.slice(0,3).toLowerCase();
+    for(const w of this.ranked){if(w.w===word.w||used.has(w.m)||w.m===word.m)continue;if(w.w.toLowerCase().startsWith(prefix)){results.push(w.m);used.add(w.m);}if(results.length>=count)break;}
+    if(results.length<count){const tl=word.w.length;for(const w of this.ranked){if(w.w===word.w||used.has(w.m)||w.m===word.m)continue;if(Math.abs(w.w.length-tl)<=1){results.push(w.m);used.add(w.m);}if(results.length>=count)break;}}
+    if(results.length<count){const p=this.ranked.filter(w=>w.w!==word.w&&!used.has(w.m)&&w.m!==word.m);for(let i=p.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[p[i],p[j]]=[p[j],p[i]];}for(const w of p){if(results.length>=count)break;if(!used.has(w.m)){results.push(w.m);used.add(w.m);}}}
+    const fp=['快速移动','缓慢下降','突然出现','大声说话','安静思考','逐渐消失','猛烈攻击','温柔对待','坚定拒绝','勉强接受','秘密调查','公开声明','完美呈现','粗糙制作','精确计算','随意安排'];
+    while(results.length<count){const f=fp[Math.floor(Math.random()*fp.length)];if(!used.has(f)){results.push(f);used.add(f);}}
     return results;
   },
 
   _renderOptions(correctM, confusables, useNoneCorrect) {
-    let opts = useNoneCorrect
-      ? [...confusables, '以上都不正确', '我不知道']
-      : [correctM, ...confusables, '以上都不正确', '我不知道'];
-    const prefix = opts.slice(0,4);
-    for (let i=prefix.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[prefix[i],prefix[j]]=[prefix[j],prefix[i]];}
-    opts = [...prefix, opts[4], opts[5]];  // keep last 2 fixed at bottom
-
-    const el = document.getElementById('vc-options');
-    el.innerHTML = '';
-    opts.forEach((opt, idx) => {
-      const btn = document.createElement('div');
-      btn.className = 'vocab-opt';
-      if (idx >= 4) { btn.classList.add('dunno'); btn.classList.add('full-width'); }
-      btn.textContent = opt;
-      btn.addEventListener('click', () => this.answer(opt, correctM, useNoneCorrect, performance.now() - this._trialStart, btn));
-      el.appendChild(btn);
-    });
+    let opts=useNoneCorrect?[...confusables,'以上都不正确','我不知道']:[correctM,...confusables,'以上都不正确','我不知道'];
+    const pf=opts.slice(0,4);for(let i=pf.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pf[i],pf[j]]=[pf[j],pf[i]];}opts=[...pf,opts[4],opts[5]];
+    const el=document.getElementById('vc-options');el.innerHTML='';
+    opts.forEach((opt,idx)=>{const b=document.createElement('div');b.className='vocab-opt';if(idx>=4){b.classList.add('dunno');b.classList.add('full-width');}b.textContent=opt;b.addEventListener('click',()=>this.answer(opt,correctM,useNoneCorrect,performance.now()-this._trialStart,b));el.appendChild(b);});
   },
 
   nextQuestion() {
-    if (!this.running) return;
-    if (this._timer) { clearTimeout(this._timer); this._timer = null; }
-
-    const word = this._pickWord();
-    if (!word) return;
-    this.seenWords.add(word.w);
-
-    const correctM = word.m;
-    const useNoneCorrect = Math.random() < 0.12;
-    const confusables = this._getConfusableMeanings(word, useNoneCorrect ? 4 : 3);
-
-    document.getElementById('vc-word').textContent = word.w;
-    this._renderOptions(correctM, confusables, useNoneCorrect);
-    this._trialStart = performance.now();
-
-    // Timer bar 6s
-    const bar = document.getElementById('vc-timer-fill');
-    bar.style.transition = 'none'; bar.style.width = '100%'; bar.classList.remove('urgent');
-    void bar.offsetWidth;
-    bar.style.transition = 'width 6s linear'; bar.style.width = '0%';
-    setTimeout(() => { if (this.running) bar.classList.add('urgent'); }, 3600);
-
-    // Auto-fail at 6s
-    this._timer = setTimeout(() => {
-      if (!this.running) return;
-      this._processAnswer(word, false, 6000, 'timeout');
-    }, 6000);
+    if(!this.running)return;
+    if(this._timer){clearTimeout(this._timer);this._timer=null;}
+    const word=this._pickWord();if(!word)return;this.seenWords.add(word.w);
+    const correctM=word.m;const useNoneCorrect=Math.random()<0.12;
+    const confusables=this._getConfusableMeanings(word,useNoneCorrect?4:3);
+    document.getElementById('vc-word').textContent=word.w;
+    this._renderOptions(correctM,confusables,useNoneCorrect);this._trialStart=performance.now();
+    const bar=document.getElementById('vc-timer-fill');bar.style.transition='none';bar.style.width='100%';bar.classList.remove('urgent');void bar.offsetWidth;bar.style.transition='width 6s linear';bar.style.width='0%';
+    setTimeout(()=>{if(this.running)bar.classList.add('urgent');},3600);
+    this._timer=setTimeout(()=>{if(!this.running)return;this._processAnswer(word,false,6000,'timeout');},6000);
   },
 
   _processAnswer(word, correct, ms, chosen) {
-    // IRT update
-    this.totalTried++; this.totalTime += ms;
-    if (correct) this.totalCorrect++;
-
-    // P = probability of correct at current theta for this word's difficulty
-    const difficulty = this.wordScores.get(word.w) || 5000;
-    const P = 1 / (1 + Math.exp(-(this.theta - difficulty) / 2000));
-
-    let K = this.K / (1 + this.totalTried * 0.02); // damping
-    // Speed modifier: fast correct → bigger K, slow → smaller
-    if (correct) {
-      if (ms < 2000) K *= 1.4;       // lightning fast
-      else if (ms < 4000) K *= 1.1;  // normal
-      else K *= 0.8;                 // slow correct
-    } else {
-      if (ms >= 6000) K *= 1.2;      // timed out — really didn't know
-      else K *= 1.0;
-    }
-
-    // ELO-style update
-    if (correct) {
-      this.theta += K * (1 - P);
-    } else {
-      this.theta -= K * P;
-    }
-    this.theta = Math.max(100, Math.min(50000, this.theta));
-
-    // Show correct answer if wrong
-    if (!correct && chosen !== 'timeout') {
-      const opts = Array.from(document.getElementById('vc-options').children);
-      // Response is handled in answer() before calling _processAnswer
-    }
-
-    this._updateDisplay();
-    this._timer = setTimeout(() => this.nextQuestion(), 900);
+    this.totalTried++;this.totalTime+=ms;
+    if(correct){this.totalCorrect++;this.streakCorrect++;}else{this.streakCorrect=0;}
+    const difficulty=this.wordScores.get(word.w)||5000;
+    const P=1/(1+Math.exp(-(this.theta-difficulty)/2000));
+    let K=this.K/(1+this.totalTried*0.02);
+    if(correct){if(ms<2000)K*=1.4;else if(ms<4000)K*=1.1;else K*=0.8;}else{if(ms>=6000)K*=1.2;}
+    if(correct)this.theta+=K*(1-P);else this.theta-=K*P;
+    this.theta=Math.max(100,Math.min(50000,this.theta));
+    this._updateDisplay();this._timer=setTimeout(()=>this.nextQuestion(),900);
   },
 
   answer(chosen, correctM, useNoneCorrect, ms, btn) {
-    if (!this.running || this._timer._processed) return;
-    if (this._timer) { clearTimeout(this._timer); this._timer = null; }
-    // Mark processed to prevent double-fire from timeout
-    this._timer = {_processed: true};
-
-    const bar = document.getElementById('vc-timer-fill');
-    bar.style.transition = 'none'; bar.style.width = '100%'; bar.classList.remove('urgent');
-
-    const actuallyCorrect = (chosen === correctM) || (chosen === '以上都不正确' && useNoneCorrect);
-
-    // Show feedback
-    const opts = Array.from(document.getElementById('vc-options').children);
-    if (!actuallyCorrect && chosen !== '我不知道') {
-      btn.classList.add('wrong');
-    }
-    if (actuallyCorrect && chosen !== '我不知道') {
-      btn.classList.add('correct');
-    }
-    // Highlight correct answer in green
-    if (!actuallyCorrect) {
-      const correctIdx = useNoneCorrect ? 4 : opts.slice(0,4).map(o=>o.textContent).indexOf(correctM);
-      if (correctIdx >= 0) opts[correctIdx].classList.add('correct');
-      else if (useNoneCorrect) opts[4].classList.add('correct');
-    }
-
-    this._processAnswer({w:'',r:0}, actuallyCorrect, ms, chosen);
+    if(!this.running||this._timer._processed)return;
+    if(this._timer){clearTimeout(this._timer);this._timer=null;}this._timer={_processed:true};
+    const bar=document.getElementById('vc-timer-fill');bar.style.transition='none';bar.style.width='100%';bar.classList.remove('urgent');
+    const actuallyCorrect=(chosen===correctM)||(chosen==='以上都不正确'&&useNoneCorrect);
+    const opts=Array.from(document.getElementById('vc-options').children);
+    if(!actuallyCorrect&&chosen!=='我不知道')btn.classList.add('wrong');
+    if(actuallyCorrect&&chosen!=='我不知道')btn.classList.add('correct');
+    if(!actuallyCorrect){const ci=useNoneCorrect?4:opts.slice(0,4).map(o=>o.textContent).indexOf(correctM);if(ci>=0)opts[ci].classList.add('correct');else if(useNoneCorrect)opts[4].classList.add('correct');}
+    this._processAnswer({w:'',r:0},actuallyCorrect,ms,chosen);
   },
 
   _updateDisplay() {
-    // Map theta to a concrete vocab size estimate
-    // theta~500 → ~2000 words, theta~5000 → ~20000 words
-    const vocabSize = Math.round(this.theta * 3.5 + 500);
-    const level = vocabSize < 1500 ? 'A1' : vocabSize < 3000 ? 'A2' : vocabSize < 6000 ? 'B1'
-      : vocabSize < 12000 ? 'B2' : vocabSize < 20000 ? 'C1' : 'C2';
-
-    document.getElementById('vc-estimate').textContent = this.totalTried < 3
-      ? '...评估中...'
-      : vocabSize.toLocaleString() + ' (' + level + ')';
-    document.getElementById('vc-level').textContent = this.totalTried < 3 ? '--' : level;
-    document.getElementById('vc-correct').textContent = this.totalCorrect + '/' + this.totalTried;
+    const vocabSize=Math.round(this.theta*3.5+500);
+    const level=vocabSize<1500?'A1':vocabSize<3000?'A2':vocabSize<6000?'B1':vocabSize<12000?'B2':vocabSize<20000?'C1':'C2';
+    document.getElementById('vc-estimate').textContent=this.totalTried<3?'...评估中...':vocabSize.toLocaleString()+' ('+level+')';
+    document.getElementById('vc-level').textContent=this.totalTried<3?'--':level;
+    document.getElementById('vc-correct').textContent=this.totalCorrect+'/'+this.totalTried;
   },
 
   stop() {
-    this.running = false;
-    if (this._timer) { clearTimeout(this._timer); this._timer = null; }
-    document.getElementById('vc-timer-fill').style.width = '100%';
-    document.getElementById('vc-timer-fill').classList.remove('urgent');
-
-    const vocabSize = Math.round(this.theta * 3.5 + 500);
-    const level = vocabSize < 1500 ? 'A1' : vocabSize < 3000 ? 'A2' : vocabSize < 6000 ? 'B1'
-      : vocabSize < 12000 ? 'B2' : vocabSize < 20000 ? 'C1' : 'C2';
-    const acc = this.totalTried>0?Math.round(this.totalCorrect/this.totalTried*100):0;
-    const avgMs = this.totalTried>0?Math.round(this.totalTime/this.totalTried):0;
-
-    const isNew = Storage.setBest('vocab', vocabSize);
-    Leaderboard.upload('vocab', {score: vocabSize, detail: level+' · '+this.totalCorrect+'/'+this.totalTried+' · '+avgMs+'ms'});
-
-    const badges = {'C2':'🏆 Mastery','C1':'🌟 Advanced','B2':'👍 Upper-Intermediate','B1':'📋 Intermediate','A2':'💪 Elementary','A1':'📚 Beginner'};
-    document.getElementById('vc-word').textContent = '';
-    document.getElementById('vc-options').innerHTML = '';
-    document.getElementById('vc-stop').style.display = 'none';
-    document.getElementById('vc-results').style.display = 'block';
-    document.getElementById('vc-results').innerHTML =
-      `<h3>测试结果</h3>
-      <div class="big-score">${vocabSize.toLocaleString()}</div>
-      <div style="font-size:1.5rem;font-weight:700;margin-bottom:4px">${level} · ${badges[level]||''}</div>
-      ${isNew?'<div class="new-best">🎉 新纪录！</div>':''}
-      <div class="details">
-        Vocabulary Size: <b>${vocabSize.toLocaleString()} words</b><br>
-        Accuracy: <b>${acc}%</b> · Avg Time: <b>${avgMs}ms</b><br>
-        Questions: <b>${this.totalTried}</b> · Correct: <b>${this.totalCorrect}</b>
-      </div>
-      <button class="btn" onclick="VocabTest.init()">重新测试</button>
-      <button class="btn outline sm" style="margin-left:8px" onclick="App.showDashboard()">返回主页</button>`;
+    this.running=false;if(this._timer){clearTimeout(this._timer);this._timer=null;}
+    document.getElementById('vc-timer-fill').style.width='100%';document.getElementById('vc-timer-fill').classList.remove('urgent');
+    const vocabSize=Math.round(this.theta*3.5+500);
+    const level=vocabSize<1500?'A1':vocabSize<3000?'A2':vocabSize<6000?'B1':vocabSize<12000?'B2':vocabSize<20000?'C1':'C2';
+    const acc=this.totalTried>0?Math.round(this.totalCorrect/this.totalTried*100):0;
+    const avgMs=this.totalTried>0?Math.round(this.totalTime/this.totalTried):0;
+    const isNew=Storage.setBest('vocab',vocabSize);
+    Leaderboard.upload('vocab',{score:vocabSize,detail:level+' · '+this.totalCorrect+'/'+this.totalTried+' · '+avgMs+'ms'});
+    const badges={'C2':'🏆 Mastery','C1':'🌟 Advanced','B2':'👍 Upper-Intermediate','B1':'📋 Intermediate','A2':'💪 Elementary','A1':'📚 Beginner'};
+    document.getElementById('vc-word').textContent='';document.getElementById('vc-options').innerHTML='';document.getElementById('vc-stop').style.display='none';
+    document.getElementById('vc-results').style.display='block';
+    document.getElementById('vc-results').innerHTML=
+      '<h3>测试结果</h3><div class="big-score">'+vocabSize.toLocaleString()+'</div><div style="font-size:1.5rem;font-weight:700;margin-bottom:4px">'+level+' · '+(badges[level]||'')+'</div>'+(isNew?'<div class="new-best">🎉 新纪录！</div>':'')+'<div class="details">Vocabulary Size: <b>'+vocabSize.toLocaleString()+' words</b><br>Accuracy: <b>'+acc+'%</b> · Avg Time: <b>'+avgMs+'ms</b><br>Questions: <b>'+this.totalTried+'</b> · Correct: <b>'+this.totalCorrect+'</b></div><button class="btn" onclick="VocabTest.init()">重新测试</button><button class="btn outline sm" style="margin-left:8px" onclick="App.showDashboard()">返回主页</button>';
     App.updateBestDisplay();
   }
-};
-// ===== App Controller =====
+};// ===== App Controller =====
 const App = {
   currentGame: null,
   showDashboard() {
