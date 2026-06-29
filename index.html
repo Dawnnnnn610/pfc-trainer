@@ -1964,16 +1964,7 @@ const Schulte = {
   },
 
   clickCell(cell, num) {
-    if (this.finished) return;
-    if (!this._started) {
-      this._started = true; this.running = true;
-      this.startTime = performance.now(); this._segStart = this.startTime;
-      // Start first segment: 1→segmentSize
-      this.timer = setInterval(() => {
-        this.elapsed = (performance.now() - this.startTime) / 1000;
-        document.getElementById('sc-time').textContent = this.elapsed.toFixed(1) + 's';
-      }, 100);
-    }
+    if (this.finished || !this._started) return;
 
     if (num === this.nextTarget) {
       cell.classList.add('found');
@@ -2081,11 +2072,18 @@ const Schulte = {
 document.getElementById('st-start').addEventListener('click', () => Stroop.start());
 document.getElementById('st-restart').addEventListener('click', () => Stroop.restart());
 document.getElementById('sc-start').addEventListener('click', () => {
-  Schulte.shuffleGrid(); Schulte.renderGrid();
-  Schulte.nextTarget = 1; Schulte.elapsed = 0;
-  Schulte.running = false; Schulte.finished = false; Schulte._started = false;
   if (Schulte.timer) clearInterval(Schulte.timer);
+  Schulte.shuffleGrid(); Schulte.renderGrid();
+  Schulte.nextTarget = 1; Schulte.elapsed = 0; Schulte.errors = 0;
+  Schulte._segments = [];
+  Schulte._started = true; Schulte.running = true; Schulte.finished = false;
+  Schulte.startTime = performance.now(); Schulte._segStart = Schulte.startTime;
+  Schulte.timer = setInterval(() => {
+    Schulte.elapsed = (performance.now() - Schulte.startTime) / 1000;
+    document.getElementById('sc-time').textContent = Schulte.elapsed.toFixed(1) + 's';
+  }, 100);
   document.getElementById('sc-time').textContent = '0.0s';
+  document.getElementById('sc-errors').textContent = '0';
   document.getElementById('sc-next').textContent = '1';
   document.getElementById('sc-results').style.display = 'none';
 });
