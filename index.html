@@ -96,7 +96,8 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
 .btn.sm { padding: 8px 16px; font-size: .85rem; }
 
 /* ===== N-Back ===== */
-.nback-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: min(320px, 80vw); }
+.nback-grid { display: grid; gap: 10px; position: relative; }
+/* grid-template-columns and width set inline via JS based on gridSize */
 .nback-cell {
   aspect-ratio: 1; background: var(--surface2);
   border-radius: var(--radius-sm); border: 2px solid rgba(255,255,255,.05);
@@ -112,7 +113,6 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
   animation: missPop .6s ease-out forwards;
 }
 @keyframes missPop { 0%{opacity:1;transform:translate(-50%,-50%) scale(1)} 100%{opacity:0;transform:translate(-50%,-50%) scale(1.6)} }
-.nback-grid { position: relative; }
 .nback-timer-bar {
   width: min(320px, 80vw); height: 4px; background: rgba(255,255,255,.08);
   border-radius: 2px; margin: 0 auto; overflow: hidden;
@@ -181,10 +181,6 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
 .nback-menu-btn.hell-btn { border-color: rgba(247,84,92,.3); background: rgba(247,84,92,.06); }
 .nback-menu-btn.hell-btn:hover { border-color: var(--red); }
 .nback-footer { color: var(--text2); font-size: .82rem; text-align: center; margin-top: 20px; font-style: italic; opacity: .7; }
-
-/* Hell mode 5×5 grid */
-.nback-grid.hell { grid-template-columns: repeat(5, 1fr); width: min(400px, 90vw); gap: 5px; }
-.nback-timer-bar.hell { width: min(400px, 90vw); }
 
 /* ===== Stroop ===== */
 .stroop-word {
@@ -643,16 +639,26 @@ const NBack = {
 
   renderGrid() {
     const grid = document.getElementById('nb-grid');
+    const wrap = document.getElementById('nb-grid-wrap');
+    const bar = document.getElementById('nb-timer-bar');
     grid.innerHTML = '';
     const total = this.gridSize * this.gridSize;
-    // Explicit add/remove instead of toggle to avoid stale state
+
+    // Set dimensions inline — no CSS class race possible
     if (this.gridSize === 5) {
-      grid.classList.add('hell');
-      document.getElementById('nb-timer-bar').classList.add('hell');
+      grid.style.gridTemplateColumns = 'repeat(5, 1fr)';
+      grid.style.width = 'min(420px, 94vw)';
+      grid.style.gap = '5px';
+      wrap.style.width = 'min(420px, 94vw)';
+      bar.style.width = 'min(420px, 94vw)';
     } else {
-      grid.classList.remove('hell');
-      document.getElementById('nb-timer-bar').classList.remove('hell');
+      grid.style.gridTemplateColumns = 'repeat(3, 1fr)';
+      grid.style.width = 'min(320px, 80vw)';
+      grid.style.gap = '10px';
+      wrap.style.width = 'min(320px, 80vw)';
+      bar.style.width = 'min(320px, 80vw)';
     }
+
     for (let i = 0; i < total; i++) {
       const cell = document.createElement('div');
       cell.className = 'nback-cell';
