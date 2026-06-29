@@ -471,7 +471,7 @@ const App = {
       if (!el) return;
       if (g === 'nback') {
         const b = Storage.getBest('nback');
-        el.textContent = b !== null ? b + '%' : '--';
+        el.textContent = b !== null ? b + ' pts' : '--';
       } else if (g === 'stroop') {
         const b = Storage.getBest('stroop');
         el.textContent = b !== null ? b + ' 分' : '--';
@@ -830,15 +830,50 @@ const NBack = {
     else el.textContent = '';
   },
 
-  _updateScore() {
-    let hits = 0, misses = 0, fa = 0, cr = 0, total = 0;
-    for (let i = this.n; i < Math.min(this.trials.length, this.responses.length + this.n); i++) {
-      const r = this.responses[i - this.n];
+  /* ── Scoring system ── */
+  _calcScore() {
+    // Count raw stats (both dims summed)
+    let hits = 0, misses = 0, fa = 0, cr = 0;
+    for (let i = this.n; i < this.trials.length; i++) {
+      const r = this.responses[i - this.n] || {pos: false, col: false};
       if (this.posMatch[i]) { if (r.pos) hits++; else misses++; } else { if (r.pos) fa++; else cr++; }
       if (this.colMatch[i]) { if (r.col) hits++; else misses++; } else { if (r.col) fa++; else cr++; }
-      total += 2;
     }
-    if (total > 0) document.getElementById('nb-score').textContent = Math.round((hits + cr) / total * 100) + '%';
+    const total = hits + misses + fa + cr;
+
+    // Weighted raw score
+    const HIT_W = 100, MISS_W = -150, FA_W = -75, CR_W = 25;
+    let raw = hits * HIT_W + misses * MISS_W + fa * FA_W + cr * CR_W;
+
+    // Difficulty multipliers
+    const nMult = [1, 1.0, 1.5, 2.0, 3.0][this.n] || 1.0;
+    const gridMult = this._gridSize() === 5 ? 1.3 : 1.0;
+    raw = Math.round(raw * nMult * gridMult);
+
+    // Normalize to 0–1000
+    const maxRaw = (total * HIT_W) * nMult * gridMult;
+    const minRaw = (total * MISS_W) * nMult * gridMult;
+    let score = 0;
+    if (maxRaw > minRaw) {
+      score = Math.round(((raw - minRaw) / (maxRaw - minRaw)) * 1000);
+      score = Math.max(0, Math.min(1000, score));
+    }
+
+    // Grade
+    let grade, gradeColor;
+    if (score >= 900)      { grade = 'S'; gradeColor = '#f7c948'; }
+    else if (score >= 750) { grade = 'A'; gradeColor = '#4cdf80'; }
+    else if (score >= 550) { grade = 'B'; gradeColor = '#4da6ff'; }
+    else if (score >= 350) { grade = 'C'; gradeColor = '#e0e0f0'; }
+    else if (score >= 150) { grade = 'D'; gradeColor = '#ff8c42'; }
+    else                   { grade = 'F'; gradeColor = '#f7545c'; }
+
+    return { hits, misses, fa, cr, total, raw, score, grade, gradeColor, nMult, gridMult };
+  },
+
+  _updateScore() {
+    const s = this._calcScore();
+    document.getElementById('nb-score').textContent = s.score + ' ' + s.grade;
   },
 
   /* ── Finish ── */
@@ -858,30 +893,30 @@ const NBack = {
     document.getElementById('nb-phase').textContent = '';
     document.getElementById('nb-phase').className = 'nback-phase';
 
-    let hits = 0, misses = 0, fa = 0, cr = 0;
-    for (let i = this.n; i < this.trials.length; i++) {
-      const r = this.responses[i - this.n] || {pos:false, col:false};
-      if (this.posMatch[i]) { if (r.pos) hits++; else misses++; } else { if (r.pos) fa++; else cr++; }
-      if (this.colMatch[i]) { if (r.col) hits++; else misses++; } else { if (r.col) fa++; else cr++; }
-    }
-    const total = hits + misses + fa + cr;
-    const pct = total > 0 ? Math.round((hits + cr) / total * 100) : 0;
-    const isNew = Storage.setBest('nback', pct);
+    const s = this._calcScore();
+    const isNew = Storage.setBest('nback', s.score);
+
+    // Badge text
+    const badges = {S:'🏆 Outstanding', A:'🌟 Excellent', B:'👍 Good', C:'📋 Average', D:'💪 Below Avg', F:'📚 Practice'};
+    const modeLabel = this.mode === 'hell' ? '地狱模式 · 4-Back · 5×5' : this.n + '-Back · 3×3';
 
     const results = document.getElementById('nb-results');
     results.style.display = 'block';
-    results.innerHTML = `
-      <h3>训练结束</h3>
-      <div class="big-score">${pct}%</div>
+    results.innerHTML =
+      `<h3>训练结束</h3>
+      <div class="big-score" style="color:${s.gradeColor}">${s.score}</div>
+      <div style="font-size:1.8rem;font-weight:900;color:${s.gradeColor};margin-bottom:8px">${badges[s.grade]}</div>
       ${isNew ? '<div class="new-best">🎉 新纪录！</div>' : ''}
       <div class="details">
-        Hits: <b>${hits}</b> &nbsp; Miss: <b>${misses}</b> &nbsp;
-        False Alarm: <b>${fa}</b> &nbsp; Correct Rejection: <b>${cr}</b><br>
-        Level: <b>${this.n}-Back</b>
+        Mode: <b>${modeLabel}</b> &nbsp;|&nbsp;
+        Hits: <b>${s.hits}</b> &nbsp; Miss: <b>${s.misses}</b> &nbsp;
+        FA: <b>${s.fa}</b> &nbsp; CR: <b>${s.cr}</b><br>
+        Score: raw <b>${s.raw > 0 ? '+' : ''}${s.raw}</b>
+        × N${s.nMult} × G${s.gridMult}
+        → <b>${s.score}</b> / 1000
       </div>
       <button class="btn" onclick="App.startNBack(NBack.mode)">再来一局</button>
-      <button class="btn outline sm" style="margin-left:8px" onclick="App.showNBackMenu()">返回菜单</button>
-    `;
+      <button class="btn outline sm" style="margin-left:8px" onclick="App.showNBackMenu()">返回菜单</button>`;
     App.updateBestDisplay();
   },
 
