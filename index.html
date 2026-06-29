@@ -122,6 +122,27 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
   transition: all .2s;
 }
 .nback-level-select button.active { background: var(--accent); border-color: var(--accent); }
+.nback-phase {
+  text-align: center; font-weight: 700; font-size: 1rem; min-height: 28px;
+  padding: 6px 14px; border-radius: 20px; display: inline-block; margin: 0 auto;
+}
+.nback-phase.warmup { background: rgba(247,201,72,.15); color: var(--yellow); }
+.nback-phase.active-phase { background: rgba(76,223,128,.15); color: var(--green); }
+.nback-tutorial-guide {
+  background: rgba(124,111,247,.1); border: 1px solid rgba(124,111,247,.25);
+  border-radius: var(--radius-sm); padding: 16px; margin-bottom: 8px;
+  text-align: center; line-height: 1.7; font-size: .92rem;
+}
+.nback-tutorial-guide .step-badge {
+  background: var(--accent); color: #fff; border-radius: 12px;
+  padding: 2px 10px; font-size: .75rem; font-weight: 700; margin-right: 8px;
+}
+.nback-history-row { display: flex; gap: 6px; justify-content: center; margin-bottom: 6px; flex-wrap: wrap; }
+.nback-history-dot {
+  width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(255,255,255,.2);
+  transition: all .2s;
+}
+.nback-history-dot.filled { border-color: rgba(255,255,255,.6); }
 
 /* ===== Stroop ===== */
 .stroop-word {
@@ -174,34 +195,6 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
   background: var(--surface2); border: 1px solid rgba(255,255,255,.15);
   border-radius: 4px; padding: 2px 7px; font-size: .8rem; color: var(--text);
 }
-
-/* ===== Tutorial Modal ===== */
-.tutorial-overlay {
-  display: none; position: fixed; inset: 0; z-index: 100;
-  background: rgba(0,0,0,.75); justify-content: center; align-items: center;
-  padding: 20px;
-}
-.tutorial-overlay.active { display: flex; }
-.tutorial-card {
-  background: var(--surface); border: 1px solid rgba(255,255,255,.1);
-  border-radius: var(--radius); padding: 32px; max-width: 500px; width: 100%;
-  animation: fadeIn .3s ease;
-}
-.tutorial-card h3 { font-size: 1.3rem; margin-bottom: 20px; text-align: center; }
-.tutorial-content { margin-bottom: 24px; }
-.tutorial-step { display: flex; gap: 14px; margin-bottom: 16px; align-items: flex-start; }
-.tutorial-step .step-num {
-  flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%;
-  background: var(--accent); color: #fff; display: flex; align-items: center;
-  justify-content: center; font-weight: 700; font-size: .9rem;
-}
-.tutorial-step div:last-child { line-height: 1.6; color: var(--text2); font-size: .92rem; }
-.tutorial-step div:last-child strong { color: var(--text); }
-.tutorial-step kbd {
-  background: var(--surface2); border: 1px solid rgba(255,255,255,.15);
-  border-radius: 4px; padding: 2px 7px; font-size: .8rem; color: var(--accent);
-}
-.tutorial-card .btn { width: 100%; }
 
 /* ===== Stroop word pop ===== */
 .stroop-word { transition: transform .1s ease-out; }
@@ -269,14 +262,16 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
       <button data-n="2" class="active">2-Back</button>
       <button data-n="3">3-Back</button>
     </div>
-    <div class="instructions">记住<strong>位置</strong>和<strong>颜色</strong>。位置匹配按 <kbd>A</kbd>，颜色匹配按 <kbd>L</kbd></div>
+    <div class="nback-tutorial-guide" id="nb-guide" style="display:none"></div>
+    <div class="nback-phase" id="nb-phase"></div>
+    <div class="nback-history-row" id="nb-history"></div>
     <div class="nback-grid" id="nb-grid"></div>
-    <div class="nback-response">
+    <div class="nback-response" id="nb-response">
       <div class="resp-btn" id="resp-pos">📍 位置匹配<span class="key">按键 A</span></div>
       <div class="resp-btn" id="resp-col">🎨 颜色匹配<span class="key">按键 L</span></div>
     </div>
     <button class="btn" id="nb-start" style="margin-top:8px">开始训练</button>
-    <button class="btn outline sm" id="nb-how" style="margin-top:8px;margin-left:8px" onclick="NBack.showTutorial()">❓ 怎么玩</button>
+    <button class="btn" id="nb-tutorial-btn" style="margin-top:8px;margin-left:8px" onclick="NBack.startTutorial()">🎓 教学关卡</button>
   </div>
   <div class="results" id="nb-results" style="display:none"></div>
 </section>
@@ -324,32 +319,6 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
   </div>
   <div class="results" id="sc-results" style="display:none"></div>
 </section>
-
-<!-- ===== N-Back Tutorial Modal ===== -->
-<div class="tutorial-overlay" id="nb-tutorial">
-  <div class="tutorial-card">
-    <h3>🧩 Dual N-Back 怎么玩？</h3>
-    <div class="tutorial-content">
-      <div class="tutorial-step">
-        <div class="step-num">1</div>
-        <div>屏幕上 3×3 格子会<strong>依次亮起</strong>，每个同时有<strong>位置</strong>和<strong>颜色</strong>。</div>
-      </div>
-      <div class="tutorial-step">
-        <div class="step-num">2</div>
-        <div>你需要判断：<strong>现在亮的</strong>和 <strong>N 步之前亮的</strong>是否相同。</div>
-      </div>
-      <div class="tutorial-step">
-        <div class="step-num">3</div>
-        <div>如果<strong>位置</strong>相同 → 按 <kbd>A</kbd>；如果<strong>颜色</strong>相同 → 按 <kbd>L</kbd>。</div>
-      </div>
-      <div class="tutorial-step">
-        <div class="step-num">💡</div>
-        <div>比如 2-Back：你看到第 3 个格子，就要和第 1 个格子比。位置和颜色各自独立判断——可能都有匹配，可能都没有，也可能只有一项匹配。</div>
-      </div>
-    </div>
-    <button class="btn" onclick="document.getElementById('nb-tutorial').classList.remove('active')">我懂了，开始训练！</button>
-  </div>
-</div>
 
 </main>
 
@@ -414,41 +383,47 @@ const App = {
 // ===== Dual N-Back Game =====
 const NBack = {
   n: 2,
-  trials: [],
-  currentTrial: 0,
-  totalTrials: 20,
+  trials: [],       // all trials (warmup + active)
+  currentIdx: 0,    // index in trials array
+  totalTrials: 20,  // number of ACTIVE trials (not counting warmup)
   trialTimer: null,
   displayMs: 2000,
   itiMs: 400,
-  responses: [], // {pos: bool, col: bool} per trial
-  posMatch: [],  // true/false per trial
-  colMatch: [],  // true/false per trial
+  responses: [],    // only for active trials
+  posMatch: [],
+  colMatch: [],
   running: false,
   respondedThisTrial: {pos: false, col: false},
+  tutorialMode: false,
+  warmupIdx: 0,     // which warmup trial we're on
 
-  showTutorial() {
-    document.getElementById('nb-tutorial').classList.add('active');
-  },
+  COLORS: ['#4da6ff','#4cdf80','#f7545c','#f7c948','#ff8c42','#c084fc'],
 
+  /* ── Init & UI helpers ── */
   init() {
-    this.n = 2;
+    this.n = 2; this.tutorialMode = false;
     document.querySelectorAll('#nb-levels button').forEach(b => b.classList.remove('active'));
     document.querySelector('#nb-levels button[data-n="2"]').classList.add('active');
     document.getElementById('nb-score').textContent = '0';
     document.getElementById('nb-trial').textContent = '0/' + this.totalTrials;
-    document.getElementById('nb-start').style.display = 'block';
+    document.getElementById('nb-start').style.display = 'inline-block';
+    document.getElementById('nb-tutorial-btn').style.display = 'inline-block';
     document.getElementById('nb-results').style.display = 'none';
-    document.getElementById('nb-grid').style.display = 'grid';
+    document.getElementById('nb-guide').style.display = 'none';
+    document.getElementById('nb-phase').textContent = '';
+    document.getElementById('nb-phase').className = 'nback-phase';
+    document.getElementById('nb-history').innerHTML = '';
+    document.getElementById('nb-response').style.display = 'flex';
     document.getElementById('resp-pos').className = 'resp-btn';
     document.getElementById('resp-col').className = 'resp-btn';
     this.running = false;
     if (this.trialTimer) clearTimeout(this.trialTimer);
     this.renderGrid();
-    this.setupLevelButtons();
-    this.setupResponseButtons();
+    this._bindLevels();
+    this._bindRespBtns();
   },
 
-  setupLevelButtons() {
+  _bindLevels() {
     document.querySelectorAll('#nb-levels button').forEach(btn => {
       btn.onclick = () => {
         if (this.running) return;
@@ -459,12 +434,9 @@ const NBack = {
     });
   },
 
-  setupResponseButtons() {
-    const posBtn = document.getElementById('resp-pos');
-    const colBtn = document.getElementById('resp-col');
-    posBtn.onclick = () => this.respond('pos');
-    colBtn.onclick = () => this.respond('col');
-    // also set up fresh each init
+  _bindRespBtns() {
+    document.getElementById('resp-pos').onclick = () => this.respond('pos');
+    document.getElementById('resp-col').onclick = () => this.respond('col');
   },
 
   renderGrid() {
@@ -478,179 +450,176 @@ const NBack = {
     }
   },
 
+  _clearCells() {
+    document.querySelectorAll('#nb-grid .nback-cell').forEach(c => {
+      c.className = 'nback-cell'; c.style.backgroundColor = '';
+    });
+  },
+
+  _showCells(trial) {
+    this._clearCells();
+    const cells = document.querySelectorAll('#nb-grid .nback-cell');
+    cells[trial.pos].classList.add('lit');
+    cells[trial.pos].style.backgroundColor = trial.col;
+  },
+
+  /* ── Sequence generator ── */
   generateSequence() {
-    const colors = ['#4da6ff','#4cdf80','#f7545c','#f7c948','#ff8c42','#c084fc'];
+    // total trials = warmup (n) + active (totalTrials)
+    const allCount = this.n + this.totalTrials;
     this.trials = [];
     this.posMatch = [];
     this.colMatch = [];
     this.responses = [];
 
-    for (let i = 0; i < this.totalTrials + this.n; i++) {
+    for (let i = 0; i < allCount; i++) {
       let pos, col;
       if (i >= this.n) {
-        // ~30% chance of position match
-        if (Math.random() < 0.3) {
-          pos = this.trials[i - this.n].pos;
-          this.posMatch.push(true);
-        } else {
-          do { pos = Math.floor(Math.random() * 9); }
-          while (pos === this.trials[i - this.n]?.pos);
-          this.posMatch.push(false);
-        }
-        // ~30% chance of color match (independent of position match)
-        if (Math.random() < 0.3) {
-          col = this.trials[i - this.n].col;
-          this.colMatch.push(true);
-        } else {
-          do { col = colors[Math.floor(Math.random() * colors.length)]; }
-          while (col === this.trials[i - this.n]?.col);
-          this.colMatch.push(false);
-        }
+        // Active trial: compare to i-n
+        pos = (Math.random() < 0.3)
+          ? this.trials[i - this.n].pos
+          : this._randExcept(this.trials[i - this.n].pos, 9);
+        this.posMatch.push(i >= this.n ? pos === this.trials[i - this.n].pos : false);
+
+        col = (Math.random() < 0.3)
+          ? this.trials[i - this.n].col
+          : this._randColorExcept(this.trials[i - this.n].col);
+        this.colMatch.push(i >= this.n ? col === this.trials[i - this.n].col : false);
       } else {
+        // Warmup trial: random, no match needed
         pos = Math.floor(Math.random() * 9);
-        col = colors[Math.floor(Math.random() * colors.length)];
+        col = this.COLORS[Math.floor(Math.random() * this.COLORS.length)];
         this.posMatch.push(false);
         this.colMatch.push(false);
       }
       this.trials.push({pos, col});
     }
-    // Remove first n trials (no response needed)
-    // Actually, we keep them but start displaying from trial n
   },
 
+  _randExcept(v, max) { let r; do { r = Math.floor(Math.random() * max); } while (r === v && max > 1); return r; },
+  _randColorExcept(c) { let r; do { r = this.COLORS[Math.floor(Math.random() * this.COLORS.length)]; } while (r === c && this.COLORS.length > 1); return r; },
+
+  /* ── Start normal game ── */
   start() {
     if (this.running) return;
+    this.tutorialMode = false;
     this.generateSequence();
-    this.currentTrial = this.n; // start after n trials (first n are for building history)
+    this.currentIdx = 0;
     this.responses = [];
     this.running = true;
     document.getElementById('nb-start').style.display = 'none';
+    document.getElementById('nb-tutorial-btn').style.display = 'none';
     document.getElementById('nb-results').style.display = 'none';
+    document.getElementById('nb-guide').style.display = 'none';
+    document.getElementById('nb-history').innerHTML = '';
     document.getElementById('nb-score').textContent = '0';
     document.getElementById('resp-pos').className = 'resp-btn';
     document.getElementById('resp-col').className = 'resp-btn';
+    document.getElementById('nb-response').style.display = 'none'; // hide during warmup
+    this._showPhase('warmup', '', '');
     this.runTrial();
   },
 
+  /* ── Run one trial ── */
   runTrial() {
-    if (this.currentTrial >= this.trials.length) {
-      this.finish();
-      return;
+    if (this.currentIdx >= this.trials.length) { this.finish(); return; }
+
+    const trial = this.trials[this.currentIdx];
+    const isWarmup = this.currentIdx < this.n;
+
+    // Update display
+    if (isWarmup) {
+      document.getElementById('nb-trial').textContent = '暖场 ' + (this.currentIdx + 1) + '/' + this.n;
+      document.getElementById('nb-response').style.display = 'none';
+    } else {
+      const activeNum = this.currentIdx - this.n + 1;
+      document.getElementById('nb-trial').textContent = activeNum + '/' + this.totalTrials;
+      document.getElementById('nb-response').style.display = 'flex';
+      this.respondedThisTrial = {pos: false, col: false};
+      this.responses.push({pos: false, col: false});
     }
-    const idx = this.currentTrial - this.n; // display index for the user
-    document.getElementById('nb-trial').textContent = (idx + 1) + '/' + this.totalTrials;
-    this.respondedThisTrial = {pos: false, col: false};
-    this.responses.push({pos: false, col: false});
 
-    const trial = this.trials[this.currentTrial];
-    const cells = document.querySelectorAll('#nb-grid .nback-cell');
-    cells.forEach(c => { c.className = 'nback-cell'; c.style.backgroundColor = ''; });
+    this._showCells(trial);
 
-    // Light up the target cell
-    const cell = cells[trial.pos];
-    cell.classList.add('lit');
-    cell.style.backgroundColor = trial.col;
-    // Clear after display time
+    // Phase label
+    if (isWarmup) {
+      this._showPhase('warmup', '👀 暖场阶段', '只需观察并记住，第 ' + (this.n + 1) + ' 步开始答题。现在 — ' + this.n + '-Back 意思是：等下第 ' + (this.n + 1) + ' 步和第 1 步比较');
+    } else if (this.currentIdx === this.n) {
+      const compareTo = this.currentIdx - this.n + 1;
+      this._showPhase('active-phase', '🎯 正式开始！', '当前与第 ' + compareTo + ' 步比较。位置相同按 A｜颜色相同按 L');
+    }
+
+    // After display time, hide and wait ITI
     this.trialTimer = setTimeout(() => {
-      cells.forEach(c => { c.className = 'nback-cell'; c.style.backgroundColor = ''; });
-      // ITI
+      this._clearCells();
       this.trialTimer = setTimeout(() => {
-        this.currentTrial++;
+        this.currentIdx++;
         this.runTrial();
       }, this.itiMs);
     }, this.displayMs);
   },
 
+  _showPhase(cls, title, subtitle) {
+    const el = document.getElementById('nb-phase');
+    el.className = 'nback-phase ' + (cls || '');
+    if (title) el.innerHTML = title + (subtitle ? '<br><small style="font-weight:400;opacity:.8">' + subtitle + '</small>' : '');
+    else el.textContent = '';
+  },
+
+  /* ── Player response ── */
   respond(type) {
-    if (!this.running) return;
+    if (!this.running || this.currentIdx < this.n) return; // ignore during warmup
     const respIdx = this.responses.length - 1;
-    if (respIdx < 0) return;
-    if (this.respondedThisTrial[type]) return; // already responded this trial
+    if (respIdx < 0 || this.respondedThisTrial[type]) return;
     this.respondedThisTrial[type] = true;
     this.responses[respIdx][type] = true;
 
-    const actualMatch = type === 'pos'
-      ? this.posMatch[this.currentTrial]
-      : this.colMatch[this.currentTrial];
-
+    const actual = type === 'pos' ? this.posMatch[this.currentIdx] : this.colMatch[this.currentIdx];
     const btn = document.getElementById(type === 'pos' ? 'resp-pos' : 'resp-col');
-    if (actualMatch) {
-      btn.classList.add('correct');
-    } else {
-      btn.classList.add('wrong');
-    }
-    // also flash the grid cell
-    const trial = this.trials[this.currentTrial];
+    btn.classList.add(actual ? 'correct' : 'wrong');
+    const trial = this.trials[this.currentIdx];
     const cell = document.querySelectorAll('#nb-grid .nback-cell')[trial.pos];
-    if (cell) cell.classList.add(actualMatch ? 'match-hit' : 'match-miss');
+    if (cell) cell.classList.add(actual ? 'match-hit' : 'match-miss');
 
     setTimeout(() => {
       btn.classList.remove('correct', 'wrong');
-      const cells = document.querySelectorAll('#nb-grid .nback-cell');
-      cells.forEach(c => { c.classList.remove('match-hit', 'match-miss'); });
+      document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.remove('match-hit', 'match-miss'));
     }, 300);
 
-    this.updateScoreDisplay();
+    this._updateScore();
   },
 
-  updateScoreDisplay() {
-    // Calculate running score
-    let hits = 0, misses = 0, falseAlarms = 0, correctRejections = 0;
-    let totalPosMatches = 0, totalColMatches = 0;
-    let totalPosNon = 0, totalColNon = 0;
-
+  _updateScore() {
+    let hits = 0, misses = 0, fa = 0, cr = 0, total = 0;
     for (let i = this.n; i < Math.min(this.trials.length, this.responses.length + this.n); i++) {
-      // Position
-      if (this.posMatch[i]) {
-        totalPosMatches++;
-        if (this.responses[i - this.n]?.pos) hits++;
-        else misses++;
-      } else {
-        totalPosNon++;
-        if (this.responses[i - this.n]?.pos) falseAlarms++;
-        else correctRejections++;
-      }
-      // Color
-      if (this.colMatch[i]) {
-        totalColMatches++;
-        if (this.responses[i - this.n]?.col) hits++;
-        else misses++;
-      } else {
-        totalColNon++;
-        if (this.responses[i - this.n]?.col) falseAlarms++;
-        else correctRejections++;
-      }
+      const r = this.responses[i - this.n];
+      if (this.posMatch[i]) { if (r.pos) hits++; else misses++; } else { if (r.pos) fa++; else cr++; }
+      if (this.colMatch[i]) { if (r.col) hits++; else misses++; } else { if (r.col) fa++; else cr++; }
+      total += 2;
     }
-    const total = totalPosMatches + totalColMatches + totalPosNon + totalColNon;
-    if (total === 0) return;
-    const accuracy = ((hits + correctRejections) / total * 100).toFixed(0);
-    document.getElementById('nb-score').textContent = accuracy + '%';
+    if (total > 0) document.getElementById('nb-score').textContent = Math.round((hits + cr) / total * 100) + '%';
   },
 
+  /* ── Finish ── */
   finish() {
     this.running = false;
     if (this.trialTimer) clearTimeout(this.trialTimer);
     document.getElementById('nb-trial').textContent = this.totalTrials + '/' + this.totalTrials;
-
-    // Clear grid
-    const cells = document.querySelectorAll('#nb-grid .nback-cell');
-    cells.forEach(c => { c.className = 'nback-cell'; c.style.backgroundColor = ''; });
+    this._clearCells();
     document.getElementById('resp-pos').className = 'resp-btn';
     document.getElementById('resp-col').className = 'resp-btn';
+    document.getElementById('nb-response').style.display = 'flex';
+    document.getElementById('nb-phase').textContent = '';
+    document.getElementById('nb-phase').className = 'nback-phase';
 
-    // Calculate final score
-    let hits = 0, misses = 0, falseAlarms = 0, correctRejections = 0;
+    let hits = 0, misses = 0, fa = 0, cr = 0;
     for (let i = this.n; i < this.trials.length; i++) {
-      const r = this.responses[i - this.n];
-      // Position
-      if (this.posMatch[i]) { if (r.pos) hits++; else misses++; }
-      else { if (r.pos) falseAlarms++; else correctRejections++; }
-      // Color
-      if (this.colMatch[i]) { if (r.col) hits++; else misses++; }
-      else { if (r.col) falseAlarms++; else correctRejections++; }
+      const r = this.responses[i - this.n] || {pos:false, col:false};
+      if (this.posMatch[i]) { if (r.pos) hits++; else misses++; } else { if (r.pos) fa++; else cr++; }
+      if (this.colMatch[i]) { if (r.col) hits++; else misses++; } else { if (r.col) fa++; else cr++; }
     }
-    const total = hits + misses + falseAlarms + correctRejections;
-    const pct = total > 0 ? Math.round((hits + correctRejections) / total * 100) : 0;
+    const total = hits + misses + fa + cr;
+    const pct = total > 0 ? Math.round((hits + cr) / total * 100) : 0;
     const isNew = Storage.setBest('nback', pct);
 
     const results = document.getElementById('nb-results');
@@ -661,17 +630,250 @@ const NBack = {
       ${isNew ? '<div class="new-best">🎉 新纪录！</div>' : ''}
       <div class="details">
         命中: <b>${hits}</b> &nbsp; 漏报: <b>${misses}</b> &nbsp;
-        虚报: <b>${falseAlarms}</b> &nbsp; 正确拒绝: <b>${correctRejections}</b><br>
+        虚报: <b>${fa}</b> &nbsp; 正确拒绝: <b>${cr}</b><br>
         难度: <b>${this.n}-Back</b>
       </div>
-      <button class="btn" onclick="NBack.start()">再来一局</button>
+      <button class="btn" onclick="NBack.init();NBack.start()">再来一局</button>
       <button class="btn outline sm" style="margin-left:8px" onclick="App.showDashboard()">返回主页</button>
     `;
     App.updateBestDisplay();
+  },
+
+  /* ═══════════════════════════════════════
+     🎓 INTERACTIVE TUTORIAL
+     ═══════════════════════════════════════
+     Uses a fixed sequence. Player plays 1-Back.
+     Warmup: 1 trial. Active: 4 trials. */
+  tutorial: {
+    // Fixed 1-Back sequence (5 trials = 1 warmup + 4 active)
+    seq: [
+      { pos: 0, col: '#4da6ff',  // warmup 0
+        posMatch: false, colMatch: false },
+      { pos: 0, col: '#4cdf80',  // active 1: POSITION matches warmup 0, color different
+        posMatch: true,  colMatch: false },
+      { pos: 4, col: '#4cdf80',  // active 2: COLOR matches active 1, position different
+        posMatch: false, colMatch: true },
+      { pos: 8, col: '#f7545c',  // active 3: both different
+        posMatch: false, colMatch: false },
+      { pos: 8, col: '#f7545c',  // active 4: BOTH match active 3
+        posMatch: true,  colMatch: true },
+    ],
+    step: 0,   // current index in seq
+    responses: [], // per active trial {pos, col}
+    responded: {pos: false, col: false},
+
+    messages: [
+      // 0: warmup
+      '👀 <span class="step-badge">暖场</span>这是第 <b>1</b> 步。<br>记住这个格子的 <b>位置</b>（左上角）和 <b>颜色</b>（蓝色）。<br><small>1-Back 的意思是：下一步就和这一步比较。</small>',
+      // 1: pos match only
+      '🎯 <span class="step-badge">第 2 步</span>和上一步比较：<br><b>位置</b>一样吗？（都在左上角→一样！）<br><b>颜色</b>一样吗？（蓝 vs 绿→不一样）<br>👉 请按 <kbd>A</kbd> 键（位置匹配）',
+      // 2: col match only
+      '🎯 <span class="step-badge">第 3 步</span>和上一步比较：<br>位置一样吗？（左上 vs 中间→不一样）<br><b>颜色</b>一样吗？（都是绿→一样！）<br>👉 请按 <kbd>L</kbd> 键（颜色匹配）',
+      // 3: neither matches
+      '🎯 <span class="step-badge">第 4 步</span>和上一步比较：<br>位置一样吗？（不一样）<br>颜色一样吗？（不一样）<br>👉 <b>什么都不按</b>，等下一步出现',
+      // 4: both match
+      '🎯 <span class="step-badge">第 5 步</span>和上一步比较：<br>位置一样吗？（都是右下角→一样！）<br>颜色一样吗？（都是红色→一样！）<br>👉 请按 <kbd>A</kbd> 和 <kbd>L</kbd>（位置和颜色都匹配）',
+    ],
+
+    start() {
+      NBack.n = 1;
+      NBack.tutorialMode = true;
+      NBack.running = true;
+      NBack.currentIdx = 0;
+      this.step = 0;
+      this.responses = [];
+      this.responded = {pos: false, col: false};
+
+      document.getElementById('nb-start').style.display = 'none';
+      document.getElementById('nb-tutorial-btn').style.display = 'none';
+      document.getElementById('nb-results').style.display = 'none';
+      document.getElementById('nb-response').style.display = 'none';
+      document.getElementById('nb-score').textContent = '0';
+      document.getElementById('nb-trial').textContent = '教学关卡';
+      document.getElementById('nb-guide').style.display = 'block';
+      document.getElementById('resp-pos').className = 'resp-btn';
+      document.getElementById('resp-col').className = 'resp-btn';
+      document.getElementById('nb-phase').textContent = '';
+      document.getElementById('nb-phase').className = 'nback-phase';
+      NBack._clearCells();
+      document.getElementById('nb-guide').innerHTML = this.messages[0];
+      document.querySelectorAll('#nb-levels button').forEach(b => b.classList.remove('active'));
+      document.querySelector('#nb-levels button[data-n="1"]').classList.add('active');
+
+      // Show first (warmup) trial
+      const trial = this.seq[0];
+      NBack._showCells(trial);
+      NBack._showPhase('warmup', '👀 暖场', '观察并记住，无需操作');
+
+      setTimeout(() => {
+        NBack._clearCells();
+        setTimeout(() => {
+          this.step = 1;
+          NBack.currentIdx = 1;
+          this._run();
+        }, 600);
+      }, 2000);
+    },
+
+    _run() {
+      if (this.step >= this.seq.length) { this._finish(); return; }
+
+      const trial = this.seq[this.step];
+      NBack._showCells(trial);
+      document.getElementById('nb-guide').innerHTML = this.messages[this.step];
+      NBack._showPhase('active-phase', '🎯 答题阶段', '第 ' + (this.step + 1) + ' 步 / 共 5 步');
+
+      // Only show response buttons for steps that need a response
+      const showRespBtns = this.step !== 3; // step 3 is the "no match" step
+      document.getElementById('nb-response').style.display = showRespBtns ? 'flex' : 'none';
+      this.responded = {pos: false, col: false};
+      this.responses.push({pos: false, col: false});
+      NBack.respondedThisTrial = {pos: false, col: false};
+
+      // Auto-advance if this is the "no match" step
+      if (this.step === 3) {
+        const autoAdvance = setTimeout(() => {
+          if (!this.responded.pos && !this.responded.col && NBack.running) {
+            // Correct: user didn't press anything
+            this._markCorrect();
+            this._advance();
+          }
+        }, 2500);
+        // Store timer reference to cancel if user incorrectly presses
+        this._autoTimer = autoAdvance;
+      }
+    },
+
+    respond(type) {
+      if (!NBack.running || !NBack.tutorialMode) return;
+      if (this.responded[type]) return;
+      this.responded[type] = true;
+      const respIdx = this.responses.length - 1;
+      if (respIdx >= 0) this.responses[respIdx][type] = true;
+
+      const trial = this.seq[this.step];
+      const actual = type === 'pos' ? trial.posMatch : trial.colMatch;
+
+      const btn = document.getElementById(type === 'pos' ? 'resp-pos' : 'resp-col');
+      btn.classList.add(actual ? 'correct' : 'wrong');
+      const cell = document.querySelectorAll('#nb-grid .nback-cell')[trial.pos];
+      if (cell) cell.classList.add(actual ? 'match-hit' : 'match-miss');
+
+      // Show feedback in guide
+      const fb = document.getElementById('nb-guide');
+      if (actual) {
+        fb.innerHTML += '<div style="color:var(--green);margin-top:6px">✅ ' + (type === 'pos' ? '位置' : '颜色') + '匹配 — 正确！</div>';
+      } else {
+        fb.innerHTML += '<div style="color:var(--red);margin-top:6px">❌ 没有' + (type === 'pos' ? '位置' : '颜色') + '匹配 — 虚报！</div>';
+        this._markWrong();
+      }
+
+      setTimeout(() => {
+        btn.classList.remove('correct', 'wrong');
+        document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.remove('match-hit', 'match-miss'));
+        if (actual) this._checkAdvance();
+      }, 400);
+    },
+
+    // Check if user has responded correctly for this step and advance
+    _checkAdvance() {
+      const trial = this.seq[this.step];
+      const needPos = trial.posMatch;
+      const needCol = trial.colMatch;
+      if ((!needPos || this.responded.pos) && (!needCol || this.responded.col)) {
+        this._markCorrect();
+        this._advance();
+      }
+    },
+
+    _markCorrect() {
+      const fb = document.getElementById('nb-guide');
+      if (!fb.innerHTML.includes('正确')) {
+        fb.innerHTML += '<div style="color:var(--green);margin-top:6px">✅ 正确！</div>';
+      }
+    },
+
+    _markWrong() {
+      // Flash grid red
+      document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.add('match-miss'));
+      setTimeout(() => document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.remove('match-miss')), 300);
+    },
+
+    _advance() {
+      if (this._autoTimer) { clearTimeout(this._autoTimer); this._autoTimer = null; }
+      NBack._clearCells();
+      this.step++;
+      NBack.currentIdx++;
+      document.getElementById('nb-response').style.display = 'none';
+      document.getElementById('resp-pos').className = 'resp-btn';
+      document.getElementById('resp-col').className = 'resp-btn';
+
+      setTimeout(() => this._run(), 700);
+    },
+
+    _finish() {
+      if (this._autoTimer) clearTimeout(this._autoTimer);
+      NBack.running = false;
+      NBack.currentIdx = 0;
+      document.getElementById('nb-trial').textContent = '完成';
+      document.getElementById('nb-response').style.display = 'flex';
+      document.getElementById('nb-phase').textContent = '';
+      document.getElementById('nb-phase').className = 'nback-phase';
+      NBack._clearCells();
+      document.getElementById('resp-pos').className = 'resp-btn';
+      document.getElementById('resp-col').className = 'resp-btn';
+
+      const fb = document.getElementById('nb-guide');
+      fb.innerHTML = `
+        <div style="font-size:1.2rem;margin-bottom:10px">🎉 教学完成！</div>
+        <div style="line-height:1.8">
+          <b>规则总结：</b><br>
+          每看到一个格子，就回想 <b>N 步之前</b> 的那个格子（N = 你选的难度）<br>
+          • 位置相同 → 按 <kbd>A</kbd><br>
+          • 颜色相同 → 按 <kbd>L</kbd><br>
+          • 可能同时匹配 → 两个都按<br>
+          • 可能都不匹配 → 什么都不按
+        </div>
+        <button class="btn" style="margin-top:14px" onclick="NBack.init();NBack.start()">开始正式训练</button>
+      `;
+    }
+  },
+
+  startTutorial() {
+    this.init();
+    this.tutorial.start();
+  },
+
+  // Override respond to route to tutorial or normal mode
+  respond(type) {
+    if (this.tutorialMode) {
+      this.tutorial.respond(type);
+      return;
+    }
+    // Normal mode respond (defined above inline to avoid method ordering issues)
+    if (!this.running || this.currentIdx < this.n) return;
+    const respIdx = this.responses.length - 1;
+    if (respIdx < 0 || this.respondedThisTrial[type]) return;
+    this.respondedThisTrial[type] = true;
+    this.responses[respIdx][type] = true;
+
+    const actual = type === 'pos' ? this.posMatch[this.currentIdx] : this.colMatch[this.currentIdx];
+    const btn = document.getElementById(type === 'pos' ? 'resp-pos' : 'resp-col');
+    btn.classList.add(actual ? 'correct' : 'wrong');
+    const trial = this.trials[this.currentIdx];
+    const cell = document.querySelectorAll('#nb-grid .nback-cell')[trial.pos];
+    if (cell) cell.classList.add(actual ? 'match-hit' : 'match-miss');
+
+    setTimeout(() => {
+      btn.classList.remove('correct', 'wrong');
+      document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.remove('match-hit', 'match-miss'));
+    }, 300);
+
+    this._updateScore();
   }
 };
 
-// Keyboard handler for N-Back
+// Keyboard handler for N-Back (works for both normal & tutorial mode)
 document.addEventListener('keydown', e => {
   if (App.currentGame !== 'nback' || !NBack.running) return;
   if (e.key === 'a' || e.key === 'A') { e.preventDefault(); NBack.respond('pos'); }
@@ -937,11 +1139,6 @@ document.getElementById('btn-home').addEventListener('click', () => App.showDash
 document.getElementById('nb-start').addEventListener('click', () => NBack.start());
 document.getElementById('st-start').addEventListener('click', () => Stroop.start());
 document.getElementById('sc-start').addEventListener('click', () => Schulte.init());
-
-// Tutorial overlay: click outside to close
-document.getElementById('nb-tutorial').addEventListener('click', function(e) {
-  if (e.target === this) this.classList.remove('active');
-});
 
 // Initial best scores display
 App.updateBestDisplay();
