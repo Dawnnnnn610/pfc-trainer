@@ -178,6 +178,13 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
 .nback-menu-btn div { font-size: 1.05rem; font-weight: 700; margin-bottom: 4px; }
 .nback-menu-btn small { font-size: .75rem; color: var(--text2); display: block; }
 .nback-menu-btn.tutorial-btn { border-color: rgba(124,111,247,.3); background: rgba(124,111,247,.08); }
+.nback-menu-btn.hell-btn { border-color: rgba(247,84,92,.3); background: rgba(247,84,92,.06); }
+.nback-menu-btn.hell-btn:hover { border-color: var(--red); }
+.nback-footer { color: var(--text2); font-size: .82rem; text-align: center; margin-top: 20px; font-style: italic; opacity: .7; }
+
+/* Hell mode 5×5 grid */
+.nback-grid.hell { grid-template-columns: repeat(5, 1fr); width: min(400px, 90vw); gap: 5px; }
+.nback-timer-bar.hell { width: min(400px, 90vw); }
 
 /* ===== Stroop ===== */
 .stroop-word {
@@ -310,7 +317,13 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
         <div>3-Back</div>
         <small>困难 · 和前三步比较</small>
       </button>
+      <button class="nback-menu-btn hell-btn" onclick="App.startNBack('hell')">
+        <div class="icon">😈</div>
+        <div>地狱模式</div>
+        <small>5×5 · 4-Back · 20题</small>
+      </button>
     </div>
+    <p class="nback-footer">💬 dawn：通关魔鬼模式的玩家找dawn领一次</p>
   </div>
 </section>
 
@@ -477,9 +490,11 @@ const App = {
 // ===== Dual N-Back Game =====
 const NBack = {
   n: 2,
-  trials: [],       // all trials (warmup + active)
-  currentIdx: 0,    // index in trials array
-  totalTrials: 10,  // number of ACTIVE trials (not counting warmup)
+  gridSize: 3,
+  mode: '2',         // original mode string: '1','2','3','tutorial','hell'
+  trials: [],
+  currentIdx: 0,
+  totalTrials: 10,
   trialTimer: null,
   displayMs: 2000,
   itiMs: 400,
@@ -515,7 +530,7 @@ const NBack = {
   /* ── Init ── */
   init(mode) {
     // mode: 1, 2, 3 (normal), or 'tutorial'
-    this.running = false; this.tutorialMode = (mode === 'tutorial'); this.responseWindowOpen = false;
+    this.running = false; this.mode = mode; this.tutorialMode = (mode === 'tutorial'); this.responseWindowOpen = false;
     this._pend.forEach(clearTimeout); this._pend = [];
     if (this.trialTimer) clearTimeout(this.trialTimer);
     if (this.missTimer) clearTimeout(this.missTimer);
@@ -536,15 +551,21 @@ const NBack = {
     this.renderGrid();
 
     if (mode === 'tutorial') {
-      this.n = 1;
+      this.n = 1; this.gridSize = 3; this.totalTrials = 15;
       document.getElementById('nb-start').style.display = 'inline-block';
       document.getElementById('nb-start').textContent = '🎓 开始教学 (1-Back)';
       document.getElementById('nb-trial').textContent = '教学模式';
+    } else if (mode === 'hell') {
+      this.n = 4; this.gridSize = 5; this.totalTrials = 20;
+      document.getElementById('nb-start').style.display = 'inline-block';
+      document.getElementById('nb-start').textContent = '开始训练 (地狱模式 · 4-Back)';
     } else {
-      this.n = mode;
+      this.n = mode; this.gridSize = 3; this.totalTrials = 15;
       document.getElementById('nb-start').style.display = 'inline-block';
       document.getElementById('nb-start').textContent = '开始训练 (' + mode + '-Back)';
     }
+
+    document.getElementById('nb-trial').textContent = '0/' + this.totalTrials;
 
     this._bindRespBtns();
     this._bindStartBtn();
@@ -623,7 +644,10 @@ const NBack = {
   renderGrid() {
     const grid = document.getElementById('nb-grid');
     grid.innerHTML = '';
-    for (let i = 0; i < 9; i++) {
+    const total = this.gridSize * this.gridSize;
+    grid.classList.toggle('hell', this.gridSize === 5);
+    document.getElementById('nb-timer-bar').classList.toggle('hell', this.gridSize === 5);
+    for (let i = 0; i < total; i++) {
       const cell = document.createElement('div');
       cell.className = 'nback-cell';
       cell.dataset.index = i;
@@ -659,7 +683,7 @@ const NBack = {
         // Active trial: compare to i-n
         pos = (Math.random() < 0.5)
           ? this.trials[i - this.n].pos
-          : this._randExcept(this.trials[i - this.n].pos, 9);
+          : this._randExcept(this.trials[i - this.n].pos, this.gridSize * this.gridSize);
         this.posMatch.push(i >= this.n ? pos === this.trials[i - this.n].pos : false);
 
         col = (Math.random() < 0.5)
@@ -668,7 +692,7 @@ const NBack = {
         this.colMatch.push(i >= this.n ? col === this.trials[i - this.n].col : false);
       } else {
         // Warmup trial: random, no match needed
-        pos = Math.floor(Math.random() * 9);
+        pos = Math.floor(Math.random() * (this.gridSize * this.gridSize));
         col = this.COLORS[Math.floor(Math.random() * this.COLORS.length)];
         this.posMatch.push(false);
         this.colMatch.push(false);
@@ -841,7 +865,7 @@ const NBack = {
         False Alarm: <b>${fa}</b> &nbsp; Correct Rejection: <b>${cr}</b><br>
         Level: <b>${this.n}-Back</b>
       </div>
-      <button class="btn" onclick="App.startNBack(NBack.n)">再来一局</button>
+      <button class="btn" onclick="App.startNBack(NBack.mode)">再来一局</button>
       <button class="btn outline sm" style="margin-left:8px" onclick="App.showNBackMenu()">返回菜单</button>
     `;
     App.updateBestDisplay();
