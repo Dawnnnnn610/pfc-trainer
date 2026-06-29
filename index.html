@@ -183,14 +183,21 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
 .nback-footer { color: var(--text2); font-size: .82rem; text-align: center; margin-top: 20px; font-style: italic; opacity: .7; }
 
 /* ===== Stroop ===== */
+.stroop-word-display {
+  font-size: clamp(52px, 10vw, 80px); font-weight: 900;
+  text-align: center; padding: 24px 0 28px;
+  user-select: none; transition: color .15s ease;
+  line-height: 1.1;
+}
 .stroop-grid {
   display: grid; grid-template-columns: repeat(3, 1fr);
-  gap: 10px; width: min(360px, 88vw); margin: 0 auto 12px;
+  gap: 10px; width: min(340px, 85vw); margin: 0 auto;
 }
 .stroop-cell {
-  aspect-ratio: 1; border-radius: var(--radius-sm);
+  border-radius: var(--radius-sm);
   display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: clamp(1.2rem, 3.5vw, 1.5rem); cursor: pointer;
+  font-weight: 700; font-size: clamp(.95rem, 2.5vw, 1.15rem);
+  cursor: pointer; padding: 12px 0;
   border: 2px solid rgba(255,255,255,.1);
   background: var(--surface2); color: var(--text);
   transition: all .12s; user-select: none;
@@ -199,14 +206,8 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
 .stroop-cell:active { transform: scale(.94); }
 .stroop-cell.correct { box-shadow: 0 0 16px var(--green); border-color: var(--green); }
 .stroop-cell.wrong { box-shadow: 0 0 16px var(--red); border-color: var(--red); }
-.stroop-cell.word-cell {
-  background: transparent; border: 2px dashed rgba(255,255,255,.15);
-  cursor: default; pointer-events: none;
-  font-size: clamp(36px, 7vw, 52px); font-weight: 900;
-  transition: color .15s ease;
-}
 .stroop-timer-bar {
-  width: min(320px, 80vw); height: 4px; background: rgba(255,255,255,.08);
+  width: min(340px, 85vw); height: 4px; background: rgba(255,255,255,.08);
   border-radius: 2px; margin: 0 auto 8px; overflow: hidden;
 }
 .stroop-timer-bar .fill {
@@ -371,6 +372,7 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
   <div class="game-body">
     <div class="instructions">选文字的<strong>字体颜色</strong>，忽略文字含义</div>
     <div class="stroop-timer-bar" id="st-timer-bar"><div class="fill" id="st-timer-fill"></div></div>
+    <div class="stroop-word-display" id="st-word-display"></div>
     <div class="stroop-grid" id="st-grid"></div>
     <button class="btn" id="st-start">开始挑战</button>
     <button class="btn outline" id="st-restart" style="display:none">🔄 重新开始</button>
@@ -1432,10 +1434,8 @@ const Stroop = {
     {char:'黄', name:'yellow'},
     {char:'紫', name:'purple'},
     {char:'橙', name:'orange'},
-    {char:'白', name:'white'},
-    {char:'青', name:'cyan'},
   ],
-  COLORS: {red:'#ef4444',blue:'#3b82f6',green:'#22c55e',yellow:'#eab308',purple:'#a855f7',orange:'#f97316',white:'#f1f5f9',cyan:'#00d4aa'},
+  COLORS: {red:'#ef4444',blue:'#3b82f6',green:'#22c55e',yellow:'#eab308',purple:'#a855f7',orange:'#f97316'},
   totalTrials: 20,
   timeLimit: 3000,         // ms per trial
   trials: [],              // {word, displayColor, congruent:bool}
@@ -1471,21 +1471,11 @@ const Stroop = {
   renderGrid() {
     const g = document.getElementById('st-grid');
     g.innerHTML = '';
-    const layout = ['red','blue','green','yellow','word','purple','orange','white','cyan'];
-    layout.forEach(name => {
+    this.WORDS.forEach(w => {
       const cell = document.createElement('div');
-      if (name === 'word') {
-        cell.className = 'stroop-cell word-cell';
-        cell.id = 'st-word-cell';
-      } else {
-        cell.className = 'stroop-cell';
-        cell.textContent = this.WORDS.find(w => w.name === name).char;
-        // Color the button background to match its character meaning
-        const bg = this.COLORS[name];
-        cell.style.backgroundColor = bg;
-        cell.style.color = (name === 'yellow' || name === 'white') ? '#000' : '#fff';
-        cell.addEventListener('click', e => { e.preventDefault(); this.answer(name); });
-      }
+      cell.className = 'stroop-cell';
+      cell.textContent = w.char;
+      cell.addEventListener('click', e => { e.preventDefault(); this.answer(w.name); });
       g.appendChild(cell);
     });
   },
@@ -1538,7 +1528,7 @@ const Stroop = {
     const t = this.trials[this.currentTrial];
     document.getElementById('st-progress').textContent = (this.currentTrial + 1) + '/' + this.totalTrials;
 
-    const el = document.getElementById('st-word-cell');
+    const el = document.getElementById('st-word-display');
     el.textContent = t.word.char;
     el.style.color = this.COLORS[t.displayColor];
 
@@ -1580,7 +1570,7 @@ const Stroop = {
     const correct = color === t.displayColor;
     this.responses.push({correct, ms, congruent: t.congruent});
 
-    const el = document.getElementById('st-word-cell');
+    const el = document.getElementById('st-word-display');
     el.style.color = correct ? 'var(--green)' : 'var(--red)';
 
     if (correct) {
