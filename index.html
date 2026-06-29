@@ -486,8 +486,7 @@ const App = {
 // ===== Dual N-Back Game =====
 const NBack = {
   n: 2,
-  gridSize: 3,
-  mode: '2',         // original mode string: '1','2','3','tutorial','hell'
+  mode: '2',         // mode string: '1','2','3','tutorial','hell'
   trials: [],
   currentIdx: 0,
   totalTrials: 10,
@@ -523,6 +522,9 @@ const NBack = {
 
   COLORS: ['#4da6ff','#4cdf80','#f7545c','#f7c948','#ff8c42','#c084fc'],
 
+  // Derive grid size from mode — always 5 for hell, 3 for everything else. No state, no race.
+  _gridSize() { return this.mode === 'hell' ? 5 : 3; },
+
   /* ── Init ── */
   init(mode) {
     // mode: 1, 2, 3 (normal), or 'tutorial'
@@ -546,25 +548,21 @@ const NBack = {
     document.getElementById('nb-response').style.display = 'none';
 
     if (mode === 'tutorial') {
-      this.n = 1; this.gridSize = 3; this.totalTrials = 15;
+      this.n = 1; this.totalTrials = 15;
       document.getElementById('nb-start').style.display = 'inline-block';
       document.getElementById('nb-start').textContent = '🎓 开始教学 (1-Back)';
       document.getElementById('nb-trial').textContent = '教学模式';
     } else if (mode === 'hell') {
-      this.n = 4; this.gridSize = 5; this.totalTrials = 20;
+      this.n = 4; this.totalTrials = 20;
       document.getElementById('nb-start').style.display = 'inline-block';
       document.getElementById('nb-start').textContent = '开始训练 (地狱模式 · 4-Back)';
     } else {
-      this.n = mode; this.gridSize = 3; this.totalTrials = 15;
+      this.n = mode; this.totalTrials = 15;
       document.getElementById('nb-start').style.display = 'inline-block';
       document.getElementById('nb-start').textContent = '开始训练 (' + mode + '-Back)';
     }
 
     document.getElementById('nb-trial').textContent = '0/' + this.totalTrials;
-    // Pre-set wrap/timer widths BEFORE renderGrid (the HTML inline="width:min(320px)" must be overridden)
-    const w = this.gridSize === 5 ? 'min(420px, 94vw)' : 'min(320px, 80vw)';
-    document.getElementById('nb-grid-wrap').style.width = w;
-    document.getElementById('nb-timer-bar').style.width = w;
     this.renderGrid();
 
     this._bindRespBtns();
@@ -646,10 +644,10 @@ const NBack = {
     const wrap = document.getElementById('nb-grid-wrap');
     const bar = document.getElementById('nb-timer-bar');
     grid.innerHTML = '';
-    const total = this.gridSize * this.gridSize;
+    const total = this._gridSize() * this._gridSize();
 
     // Set dimensions inline — no CSS class race possible
-    if (this.gridSize === 5) {
+    if (this._gridSize() === 5) {
       grid.style.gridTemplateColumns = 'repeat(5, 1fr)';
       grid.style.width = 'min(420px, 94vw)';
       grid.style.gap = '5px';
@@ -699,7 +697,7 @@ const NBack = {
         // Active trial: compare to i-n
         pos = (Math.random() < 0.5)
           ? this.trials[i - this.n].pos
-          : this._randExcept(this.trials[i - this.n].pos, this.gridSize * this.gridSize);
+          : this._randExcept(this.trials[i - this.n].pos, this._gridSize() * this._gridSize());
         this.posMatch.push(i >= this.n ? pos === this.trials[i - this.n].pos : false);
 
         col = (Math.random() < 0.5)
@@ -708,7 +706,7 @@ const NBack = {
         this.colMatch.push(i >= this.n ? col === this.trials[i - this.n].col : false);
       } else {
         // Warmup trial: random, no match needed
-        pos = Math.floor(Math.random() * (this.gridSize * this.gridSize));
+        pos = Math.floor(Math.random() * (this._gridSize() * this._gridSize()));
         col = this.COLORS[Math.floor(Math.random() * this.COLORS.length)];
         this.posMatch.push(false);
         this.colMatch.push(false);
