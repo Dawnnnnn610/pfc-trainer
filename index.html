@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>前额叶训练 · PFC Trainer</title>
+<style>
+/* ===== CSS Variables ===== */
+:root {
+  --bg: #0a0a14;
+  --surface: #141428;
+  --surface2: #1e1e38;
+  --text: #e0e0f0;
+  --text2: #9898b8;
+  --accent: #7c6ff7;
+  --accent2: #5b4fcf;
+  --green: #4cdf80;
+  --red: #f7545c;
+  --yellow: #f7c948;
+  --blue: #4da6ff;
+  --radius: 14px;
+  --radius-sm: 8px;
+  --shadow: 0 4px 24px rgba(0,0,0,.4);
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* ===== Reset & Base ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ===== Navigation ===== */
+nav {
+  width: 100%; max-width: 800px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 24px;
+}
+nav .logo { font-size: 1.3rem; font-weight: 700; color: var(--accent); letter-spacing: -.02em; }
+nav .logo span { color: var(--text2); font-weight: 400; font-size: .85rem; margin-left: 6px; }
+nav button {
+  background: var(--surface2); color: var(--text);
+  border: 1px solid rgba(255,255,255,.08);
+  padding: 8px 16px; border-radius: var(--radius-sm);
+  cursor: pointer; font-size: .85rem; transition: all .2s;
+}
+nav button:hover { background: var(--accent); border-color: var(--accent); }
+
+/* ===== Layout ===== */
+main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
+.screen { display: none; }
+.screen.active { display: block; animation: fadeIn .3s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ===== Dashboard ===== */
+.dashboard h2 { font-size: 1.6rem; margin-bottom: 6px; }
+.dashboard .subtitle { color: var(--text2); margin-bottom: 28px; font-size: .95rem; }
+.game-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+.card {
+  background: var(--surface); border: 1px solid rgba(255,255,255,.06);
+  border-radius: var(--radius); padding: 24px; cursor: pointer;
+  transition: all .25s; position: relative; overflow: hidden;
+}
+.card:hover { transform: translateY(-3px); box-shadow: var(--shadow); border-color: var(--accent); }
+.card .icon { font-size: 2.4rem; margin-bottom: 12px; }
+.card h3 { font-size: 1.15rem; margin-bottom: 6px; }
+.card p { color: var(--text2); font-size: .85rem; line-height: 1.5; margin-bottom: 12px; }
+.card .best { font-size: .78rem; color: var(--accent); opacity: .8; }
+.card .best span { color: var(--yellow); font-weight: 600; }
+
+/* ===== Game Common ===== */
+.game-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.game-header h2 { font-size: 1.3rem; }
+.game-header .score-area { display: flex; gap: 16px; align-items: center; }
+.score-area .stat { text-align: center; }
+.score-area .stat .val { font-size: 1.4rem; font-weight: 700; color: var(--accent); }
+.score-area .stat .lbl { font-size: .7rem; color: var(--text2); text-transform: uppercase; letter-spacing: .05em; }
+.game-body { display: flex; flex-direction: column; align-items: center; gap: 20px; }
+.btn {
+  background: var(--accent); color: #fff; border: none;
+  padding: 12px 28px; border-radius: var(--radius-sm); font-size: 1rem;
+  cursor: pointer; font-weight: 600; transition: all .2s;
+}
+.btn:hover { background: var(--accent2); transform: scale(1.03); }
+.btn:active { transform: scale(.97); }
+.btn.outline { background: transparent; border: 2px solid var(--accent); color: var(--accent); }
+.btn.outline:hover { background: var(--accent); color: #fff; }
+.btn.sm { padding: 8px 16px; font-size: .85rem; }
+
+/* ===== N-Back ===== */
+.nback-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: min(320px, 80vw); }
+.nback-cell {
+  aspect-ratio: 1; background: var(--surface2);
+  border-radius: var(--radius-sm); border: 2px solid rgba(255,255,255,.05);
+  transition: all .15s;
+}
+.nback-cell.lit { border-color: rgba(255,255,255,.4); transform: scale(1.04); }
+.nback-cell.match-hit { box-shadow: 0 0 24px var(--green); border-color: var(--green); }
+.nback-cell.match-miss { box-shadow: 0 0 24px var(--red); border-color: var(--red); }
+.nback-response { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+.resp-btn {
+  padding: 14px 24px; border-radius: var(--radius-sm); font-size: 1rem; font-weight: 700;
+  cursor: pointer; border: 2px solid rgba(255,255,255,.15); background: var(--surface2); color: var(--text);
+  transition: all .12s; user-select: none; -webkit-user-select: none;
+}
+.resp-btn:active { transform: scale(.94); }
+.resp-btn .key { font-size: .7rem; color: var(--text2); display: block; margin-top: 2px; }
+.resp-btn.correct { background: var(--green); border-color: var(--green); color: #000; }
+.resp-btn.wrong { background: var(--red); border-color: var(--red); color: #fff; }
+.nback-level-select { display: flex; gap: 8px; margin-bottom: 16px; }
+.nback-level-select button {
+  padding: 6px 16px; border-radius: 20px; border: 1px solid rgba(255,255,255,.15);
+  background: transparent; color: var(--text); cursor: pointer; font-size: .85rem;
+  transition: all .2s;
+}
+.nback-level-select button.active { background: var(--accent); border-color: var(--accent); }
+
+/* ===== Stroop ===== */
+.stroop-word {
+  font-size: clamp(60px, 15vw, 120px); font-weight: 900; text-align: center;
+  letter-spacing: .05em; line-height: 1.2; user-select: none;
+}
+.stroop-buttons { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; width: min(360px, 80vw); }
+.stroop-btn {
+  padding: 18px; border-radius: var(--radius-sm); border: 2px solid rgba(255,255,255,.1);
+  color: #fff; font-size: 1.1rem; font-weight: 700; cursor: pointer; transition: all .12s;
+  user-select: none; -webkit-user-select: none;
+}
+.stroop-btn:active { transform: scale(.94); }
+.stroop-btn.c-red { background: #e74c3c; }
+.stroop-btn.c-blue { background: #3498db; }
+.stroop-btn.c-green { background: #2ecc71; color: #000; }
+.stroop-btn.c-yellow { background: #f39c12; }
+.stroop-combo { font-size: 1.1rem; font-weight: 700; color: var(--yellow); min-height: 28px; }
+.stroop-timer { font-size: 2rem; font-weight: 700; color: var(--accent); }
+.stroop-timer.urgent { color: var(--red); animation: pulse .5s infinite; }
+@keyframes pulse { 50% { opacity: .5; } }
+
+/* ===== Schulte ===== */
+.schulte-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; width: min(360px, 85vw); }
+.schulte-cell {
+  aspect-ratio: 1; background: var(--surface2); border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: clamp(14px, 4vw, 22px); font-weight: 700; cursor: pointer;
+  border: 2px solid rgba(255,255,255,.06); transition: all .12s; user-select: none;
+}
+.schulte-cell:hover { border-color: var(--accent); }
+.schulte-cell.found { background: var(--accent); border-color: var(--accent); opacity: .5; cursor: default; }
+.schulte-cell.next { border-color: var(--accent); box-shadow: 0 0 12px rgba(124,111,247,.4); }
+.schulte-cell.shake { animation: shake .3s ease; border-color: var(--red); }
+@keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 50%{transform:translateX(4px)} 75%{transform:translateX(-4px)} }
+.schulte-info { display: flex; gap: 20px; align-items: center; margin-bottom: 12px; }
+.schulte-info .next-num { font-size: 2rem; font-weight: 700; color: var(--accent); }
+.schulte-info .timer { font-size: 1.4rem; font-weight: 600; color: var(--text2); }
+
+/* ===== Results ===== */
+.results { text-align: center; padding: 30px 0; }
+.results h3 { font-size: 1.5rem; margin-bottom: 20px; }
+.results .big-score { font-size: 3.5rem; font-weight: 900; color: var(--accent); }
+.results .details { color: var(--text2); margin: 12px 0 24px; line-height: 1.8; }
+.results .details b { color: var(--text); }
+.results .new-best { color: var(--yellow); font-weight: 700; font-size: 1.1rem; margin-bottom: 16px; }
+
+/* ===== Instructions ===== */
+.instructions { color: var(--text2); font-size: .85rem; text-align: center; margin-bottom: 12px; line-height: 1.6; }
+.instructions kbd {
+  background: var(--surface2); border: 1px solid rgba(255,255,255,.15);
+  border-radius: 4px; padding: 2px 7px; font-size: .8rem; color: var(--text);
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 500px) {
+  nav { padding: 12px 16px; }
+  main { padding: 0 12px 30px; }
+  .game-cards { grid-template-columns: 1fr; }
+  .resp-btn { padding: 12px 16px; font-size: .9rem; }
+}
+</style>
+</head>
+<body>
+
+<!-- ===== Navigation ===== -->
+<nav>
+  <div class="logo">🧠 PFC<span>Trainer</span></div>
+  <button id="btn-home" style="display:none" onclick="App.showDashboard()">← 返回主页</button>
+</nav>
+
+<!-- ===== Main Container ===== -->
+<main>
+
+<!-- Dashboard -->
+<section id="dashboard" class="screen active">
+  <div class="dashboard">
+    <h2>前额叶训练中心</h2>
+    <p class="subtitle">选择一项训练，每天 10 分钟，强化你的大脑"CEO"</p>
+    <div class="game-cards">
+      <div class="card" onclick="App.startGame('nback')">
+        <div class="icon">🧩</div>
+        <h3>Dual N-Back</h3>
+        <p>工作记忆训练。记住位置和颜色，判断是否与 N 步前匹配。</p>
+        <div class="best">🏆 最佳: <span id="best-nback">--</span></div>
+      </div>
+      <div class="card" onclick="App.startGame('stroop')">
+        <div class="icon">🎨</div>
+        <h3>Stroop 挑战</h3>
+        <p>抑制控制训练。看颜色词但选字体颜色，克服自动阅读的冲动。</p>
+        <div class="best">🏆 最佳: <span id="best-stroop">--</span></div>
+      </div>
+      <div class="card" onclick="App.startGame('schulte')">
+        <div class="icon">🔢</div>
+        <h3>Schulte 方格</h3>
+        <p>注意力训练。在乱序数字中按顺序快速找到 1 到 25。</p>
+        <div class="best">🏆 最佳: <span id="best-schulte">--</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Dual N-Back Game -->
+<section id="game-nback" class="screen">
+  <div class="game-header">
+    <h2>🧩 Dual N-Back</h2>
+    <div class="score-area">
+      <div class="stat"><div class="val" id="nb-score">0</div><div class="lbl">得分</div></div>
+      <div class="stat"><div class="val" id="nb-trial">0/20</div><div class="lbl">进度</div></div>
+    </div>
+  </div>
+  <div class="game-body">
+    <div class="nback-level-select" id="nb-levels">
+      <button data-n="1">1-Back</button>
+      <button data-n="2" class="active">2-Back</button>
+      <button data-n="3">3-Back</button>
+    </div>
+    <div class="instructions">记住<strong>位置</strong>和<strong>颜色</strong>。位置匹配按 <kbd>A</kbd>，颜色匹配按 <kbd>L</kbd></div>
+    <div class="nback-grid" id="nb-grid"></div>
+    <div class="nback-response">
+      <div class="resp-btn" id="resp-pos">📍 位置匹配<span class="key">按键 A</span></div>
+      <div class="resp-btn" id="resp-col">🎨 颜色匹配<span class="key">按键 L</span></div>
+    </div>
+    <button class="btn" id="nb-start" style="margin-top:8px">开始训练</button>
+  </div>
+  <div class="results" id="nb-results" style="display:none"></div>
+</section>
+
+<!-- Stroop Game -->
+<section id="game-stroop" class="screen">
+  <div class="game-header">
+    <h2>🎨 Stroop 挑战</h2>
+    <div class="score-area">
+      <div class="stat"><div class="val" id="st-score">0</div><div class="lbl">得分</div></div>
+      <div class="stat"><div class="val stroop-timer" id="st-timer">60</div><div class="lbl">剩余秒数</div></div>
+    </div>
+  </div>
+  <div class="game-body">
+    <div class="instructions">选择文字的<strong>字体颜色</strong>，忽略文字本身的含义！</div>
+    <div class="stroop-combo" id="st-combo"></div>
+    <div class="stroop-word" id="st-word"></div>
+    <div class="stroop-buttons" id="st-btns">
+      <button class="stroop-btn c-red" data-color="red">🔴 红</button>
+      <button class="stroop-btn c-blue" data-color="blue">🔵 蓝</button>
+      <button class="stroop-btn c-green" data-color="green">🟢 绿</button>
+      <button class="stroop-btn c-yellow" data-color="yellow">🟡 黄</button>
+    </div>
+    <button class="btn" id="st-start">开始挑战</button>
+  </div>
+  <div class="results" id="st-results" style="display:none"></div>
+</section>
+
+<!-- Schulte Game -->
+<section id="game-schulte" class="screen">
+  <div class="game-header">
+    <h2>🔢 Schulte 方格</h2>
+    <div class="score-area">
+      <div class="stat"><div class="val" id="sc-time">0.0s</div><div class="lbl">用时</div></div>
+      <div class="stat"><div class="val" id="sc-best-disp">--</div><div class="lbl">最佳记录</div></div>
+    </div>
+  </div>
+  <div class="game-body">
+    <div class="instructions">按顺序从 <strong>1</strong> 点到 <strong>25</strong>，越快越好！</div>
+    <div class="schulte-info">
+      <div class="next-num">下一个: <span id="sc-next">1</span></div>
+    </div>
+    <div class="schulte-grid" id="sc-grid"></div>
+    <button class="btn" id="sc-start" style="margin-top:8px">开始 / 重新开始</button>
+  </div>
+  <div class="results" id="sc-results" style="display:none"></div>
+</section>
+
+</main>
+
+<script>
+// ===== Audio =====
+function beep(freq, dur=0.12, type='sine', vol=0.08) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type; osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(); osc.stop(ctx.currentTime + dur);
+  } catch(e) {}
+}
+
+// ===== Storage =====
+const Storage = {
+  get(key) { try { return JSON.parse(localStorage.getItem('pfc_'+key)); } catch(e) { return null; } },
+  set(key, val) { try { localStorage.setItem('pfc_'+key, JSON.stringify(val)); } catch(e) {} },
+  getBest(key) { return this.get(key+'_best'); },
+  setBest(key, score) {
+    const prev = this.getBest(key);
+    if (prev === null || score > prev) { this.set(key+'_best', score); return true; }
+    return false;
+  },
+  getBestTime(key) { return this.get(key+'_best'); },
+  setBestTime(key, time) {
+    const prev = this.getBestTime(key);
+    if (prev === null || time < prev) { this.set(key+'_best', time); return true; }
+    return false;
+  }
+};
+
+// ===== App Controller =====
+const App = {
+  currentGame: null,
+  showDashboard() {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('dashboard').classList.add('active');
+    document.getElementById('btn-home').style.display = 'none';
+    this.currentGame = null;
+    this.updateBestDisplay();
+  },
+  startGame(game) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('game-'+game).classList.add('active');
+    document.getElementById('btn-home').style.display = 'block';
+    this.currentGame = game;
+    if (game === 'nback') NBack.init();
+    if (game === 'stroop') Stroop.init();
+    if (game === 'schulte') Schulte.init();
+  },
+  updateBestDisplay() {
+    ['nback','stroop','schulte'].forEach(g => {
+      const el = document.getElementById('best-'+g);
+      if (!el) return;
+      if (g === 'nback') {
+        const b = Storage.getBest('nback');
+        el.textContent = b !== null ? b + '%' : '--';
+      } else if (g === 'stroop') {
+        const b = Storage.getBest('stroop');
+        el.textContent = b !== null ? b + ' 分' : '--';
+      } else if (g === 'schulte') {
+        const b = Storage.getBestTime('schulte');
+        el.textContent = b !== null ? b.toFixed(1) + 's' : '--';
+      }
+    });
+  }
+};
+
+// ===== Dual N-Back Game =====
+const NBack = {
+  n: 2,
+  trials: [],
+  currentTrial: 0,
+  totalTrials: 20,
+  trialTimer: null,
+  displayMs: 2000,
+  itiMs: 400,
+  responses: [], // {pos: bool, col: bool} per trial
+  posMatch: [],  // true/false per trial
+  colMatch: [],  // true/false per trial
+  running: false,
+  respondedThisTrial: {pos: false, col: false},
+
+  init() {
+    this.n = 2;
+    document.querySelectorAll('#nb-levels button').forEach(b => b.classList.remove('active'));
+    document.querySelector('#nb-levels button[data-n="2"]').classList.add('active');
+    document.getElementById('nb-score').textContent = '0';
+    document.getElementById('nb-trial').textContent = '0/' + this.totalTrials;
+    document.getElementById('nb-start').style.display = 'block';
+    document.getElementById('nb-results').style.display = 'none';
+    document.getElementById('nb-grid').style.display = 'grid';
+    document.getElementById('resp-pos').className = 'resp-btn';
+    document.getElementById('resp-col').className = 'resp-btn';
+    this.running = false;
+    if (this.trialTimer) clearTimeout(this.trialTimer);
+    this.renderGrid();
+    this.setupLevelButtons();
+    this.setupResponseButtons();
+  },
+
+  setupLevelButtons() {
+    document.querySelectorAll('#nb-levels button').forEach(btn => {
+      btn.onclick = () => {
+        if (this.running) return;
+        this.n = parseInt(btn.dataset.n);
+        document.querySelectorAll('#nb-levels button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      };
+    });
+  },
+
+  setupResponseButtons() {
+    const posBtn = document.getElementById('resp-pos');
+    const colBtn = document.getElementById('resp-col');
+    posBtn.onclick = () => this.respond('pos');
+    colBtn.onclick = () => this.respond('col');
+    // also set up fresh each init
+  },
+
+  renderGrid() {
+    const grid = document.getElementById('nb-grid');
+    grid.innerHTML = '';
+    for (let i = 0; i < 9; i++) {
+      const cell = document.createElement('div');
+      cell.className = 'nback-cell';
+      cell.dataset.index = i;
+      grid.appendChild(cell);
+    }
+  },
+
+  generateSequence() {
+    const colors = ['#4da6ff','#4cdf80','#f7545c','#f7c948','#ff8c42','#c084fc'];
+    this.trials = [];
+    this.posMatch = [];
+    this.colMatch = [];
+    this.responses = [];
+
+    for (let i = 0; i < this.totalTrials + this.n; i++) {
+      let pos, col;
+      if (i >= this.n) {
+        // ~30% chance of position match
+        if (Math.random() < 0.3) {
+          pos = this.trials[i - this.n].pos;
+          this.posMatch.push(true);
+        } else {
+          do { pos = Math.floor(Math.random() * 9); }
+          while (pos === this.trials[i - this.n]?.pos);
+          this.posMatch.push(false);
+        }
+        // ~30% chance of color match (independent of position match)
+        if (Math.random() < 0.3) {
+          col = this.trials[i - this.n].col;
+          this.colMatch.push(true);
+        } else {
+          do { col = colors[Math.floor(Math.random() * colors.length)]; }
+          while (col === this.trials[i - this.n]?.col);
+          this.colMatch.push(false);
+        }
+      } else {
+        pos = Math.floor(Math.random() * 9);
+        col = colors[Math.floor(Math.random() * colors.length)];
+        this.posMatch.push(false);
+        this.colMatch.push(false);
+      }
+      this.trials.push({pos, col});
+    }
+    // Remove first n trials (no response needed)
+    // Actually, we keep them but start displaying from trial n
+  },
+
+  start() {
+    if (this.running) return;
+    this.generateSequence();
+    this.currentTrial = this.n; // start after n trials (first n are for building history)
+    this.responses = [];
+    this.running = true;
+    document.getElementById('nb-start').style.display = 'none';
+    document.getElementById('nb-results').style.display = 'none';
+    document.getElementById('nb-score').textContent = '0';
+    document.getElementById('resp-pos').className = 'resp-btn';
+    document.getElementById('resp-col').className = 'resp-btn';
+    this.runTrial();
+  },
+
+  runTrial() {
+    if (this.currentTrial >= this.trials.length) {
+      this.finish();
+      return;
+    }
+    const idx = this.currentTrial - this.n; // display index for the user
+    document.getElementById('nb-trial').textContent = (idx + 1) + '/' + this.totalTrials;
+    this.respondedThisTrial = {pos: false, col: false};
+    this.responses.push({pos: false, col: false});
+
+    const trial = this.trials[this.currentTrial];
+    const cells = document.querySelectorAll('#nb-grid .nback-cell');
+    cells.forEach(c => { c.className = 'nback-cell'; c.style.backgroundColor = ''; });
+
+    // Light up the target cell
+    const cell = cells[trial.pos];
+    cell.classList.add('lit');
+    cell.style.backgroundColor = trial.col;
+    beep(440, 0.06, 'sine', 0.04);
+
+    // Clear after display time
+    this.trialTimer = setTimeout(() => {
+      cells.forEach(c => { c.className = 'nback-cell'; c.style.backgroundColor = ''; });
+      // ITI
+      this.trialTimer = setTimeout(() => {
+        this.currentTrial++;
+        this.runTrial();
+      }, this.itiMs);
+    }, this.displayMs);
+  },
+
+  respond(type) {
+    if (!this.running) return;
+    const respIdx = this.responses.length - 1;
+    if (respIdx < 0) return;
+    if (this.respondedThisTrial[type]) return; // already responded this trial
+    this.respondedThisTrial[type] = true;
+    this.responses[respIdx][type] = true;
+
+    const actualMatch = type === 'pos'
+      ? this.posMatch[this.currentTrial]
+      : this.colMatch[this.currentTrial];
+
+    const btn = document.getElementById(type === 'pos' ? 'resp-pos' : 'resp-col');
+    if (actualMatch) {
+      btn.classList.add('correct');
+      beep(880, 0.1, 'sine', 0.06);
+    } else {
+      btn.classList.add('wrong');
+      beep(220, 0.2, 'square', 0.06);
+    }
+    // also flash the grid cell
+    const trial = this.trials[this.currentTrial];
+    const cell = document.querySelectorAll('#nb-grid .nback-cell')[trial.pos];
+    if (cell) cell.classList.add(actualMatch ? 'match-hit' : 'match-miss');
+
+    setTimeout(() => {
+      btn.classList.remove('correct', 'wrong');
+      const cells = document.querySelectorAll('#nb-grid .nback-cell');
+      cells.forEach(c => { c.classList.remove('match-hit', 'match-miss'); });
+    }, 300);
+
+    this.updateScoreDisplay();
+  },
+
+  updateScoreDisplay() {
+    // Calculate running score
+    let hits = 0, misses = 0, falseAlarms = 0, correctRejections = 0;
+    let totalPosMatches = 0, totalColMatches = 0;
+    let totalPosNon = 0, totalColNon = 0;
+
+    for (let i = this.n; i < Math.min(this.trials.length, this.responses.length + this.n); i++) {
+      // Position
+      if (this.posMatch[i]) {
+        totalPosMatches++;
+        if (this.responses[i - this.n]?.pos) hits++;
+        else misses++;
+      } else {
+        totalPosNon++;
+        if (this.responses[i - this.n]?.pos) falseAlarms++;
+        else correctRejections++;
+      }
+      // Color
+      if (this.colMatch[i]) {
+        totalColMatches++;
+        if (this.responses[i - this.n]?.col) hits++;
+        else misses++;
+      } else {
+        totalColNon++;
+        if (this.responses[i - this.n]?.col) falseAlarms++;
+        else correctRejections++;
+      }
+    }
+    const total = totalPosMatches + totalColMatches + totalPosNon + totalColNon;
+    if (total === 0) return;
+    const accuracy = ((hits + correctRejections) / total * 100).toFixed(0);
+    document.getElementById('nb-score').textContent = accuracy + '%';
+  },
+
+  finish() {
+    this.running = false;
+    if (this.trialTimer) clearTimeout(this.trialTimer);
+    document.getElementById('nb-trial').textContent = this.totalTrials + '/' + this.totalTrials;
+
+    // Clear grid
+    const cells = document.querySelectorAll('#nb-grid .nback-cell');
+    cells.forEach(c => { c.className = 'nback-cell'; c.style.backgroundColor = ''; });
+    document.getElementById('resp-pos').className = 'resp-btn';
+    document.getElementById('resp-col').className = 'resp-btn';
+
+    // Calculate final score
+    let hits = 0, misses = 0, falseAlarms = 0, correctRejections = 0;
+    for (let i = this.n; i < this.trials.length; i++) {
+      const r = this.responses[i - this.n];
+      // Position
+      if (this.posMatch[i]) { if (r.pos) hits++; else misses++; }
+      else { if (r.pos) falseAlarms++; else correctRejections++; }
+      // Color
+      if (this.colMatch[i]) { if (r.col) hits++; else misses++; }
+      else { if (r.col) falseAlarms++; else correctRejections++; }
+    }
+    const total = hits + misses + falseAlarms + correctRejections;
+    const pct = total > 0 ? Math.round((hits + correctRejections) / total * 100) : 0;
+    const isNew = Storage.setBest('nback', pct);
+    beep(isNew ? 660 : 440, 0.3, 'sine', 0.08);
+
+    const results = document.getElementById('nb-results');
+    results.style.display = 'block';
+    results.innerHTML = `
+      <h3>训练结束</h3>
+      <div class="big-score">${pct}%</div>
+      ${isNew ? '<div class="new-best">🎉 新纪录！</div>' : ''}
+      <div class="details">
+        命中: <b>${hits}</b> &nbsp; 漏报: <b>${misses}</b> &nbsp;
+        虚报: <b>${falseAlarms}</b> &nbsp; 正确拒绝: <b>${correctRejections}</b><br>
+        难度: <b>${this.n}-Back</b>
+      </div>
+      <button class="btn" onclick="NBack.start()">再来一局</button>
+      <button class="btn outline sm" style="margin-left:8px" onclick="App.showDashboard()">返回主页</button>
+    `;
+    App.updateBestDisplay();
+  }
+};
+
+// Keyboard handler for N-Back
+document.addEventListener('keydown', e => {
+  if (App.currentGame !== 'nback' || !NBack.running) return;
+  if (e.key === 'a' || e.key === 'A') { e.preventDefault(); NBack.respond('pos'); }
+  if (e.key === 'l' || e.key === 'L') { e.preventDefault(); NBack.respond('col'); }
+});
+
+// Prevent space scrolling when pressing buttons
+document.addEventListener('keydown', e => {
+  if (e.key === ' ' && App.currentGame) e.preventDefault();
+});
+
+// ===== Stroop Challenge =====
+const Stroop = {
+  words: [
+    {char:'红', color:'red'},
+    {char:'蓝', color:'blue'},
+    {char:'绿', color:'green'},
+    {char:'黄', color:'yellow'},
+  ],
+  displayColor: '',
+  score: 0,
+  combo: 0,
+  maxCombo: 0,
+  correct: 0,
+  incorrect: 0,
+  timeLeft: 60,
+  timer: null,
+  running: false,
+
+  init() {
+    this.score = 0; this.combo = 0; this.maxCombo = 0;
+    this.correct = 0; this.incorrect = 0;
+    this.timeLeft = 60; this.running = false;
+    if (this.timer) clearInterval(this.timer);
+    document.getElementById('st-score').textContent = '0';
+    document.getElementById('st-timer').textContent = '60';
+    document.getElementById('st-timer').classList.remove('urgent');
+    document.getElementById('st-combo').textContent = '';
+    document.getElementById('st-word').textContent = '';
+    document.getElementById('st-start').style.display = 'block';
+    document.getElementById('st-results').style.display = 'none';
+  },
+
+  start() {
+    if (this.running) return;
+    this.score = 0; this.combo = 0; this.maxCombo = 0;
+    this.correct = 0; this.incorrect = 0;
+    this.timeLeft = 60; this.running = true;
+    document.getElementById('st-score').textContent = '0';
+    document.getElementById('st-timer').textContent = '60';
+    document.getElementById('st-timer').classList.remove('urgent');
+    document.getElementById('st-start').style.display = 'none';
+    document.getElementById('st-results').style.display = 'none';
+    this.nextWord();
+    this.timer = setInterval(() => {
+      this.timeLeft--;
+      document.getElementById('st-timer').textContent = this.timeLeft;
+      if (this.timeLeft <= 10) document.getElementById('st-timer').classList.add('urgent');
+      if (this.timeLeft <= 0) this.finish();
+    }, 1000);
+  },
+
+  nextWord() {
+    // Pick a random word and a different random display color
+    const word = this.words[Math.floor(Math.random() * this.words.length)];
+    let color;
+    do { color = this.words[Math.floor(Math.random() * this.words.length)]; }
+    while (color.color === word.color);
+    this.displayColor = color.color;
+
+    const el = document.getElementById('st-word');
+    el.textContent = word.char;
+    el.style.color = this.cssColor(color.color);
+  },
+
+  cssColor(c) {
+    const map = {red:'#e74c3c', blue:'#3498db', green:'#2ecc71', yellow:'#f39c12'};
+    return map[c] || c;
+  },
+
+  answer(color) {
+    if (!this.running) return;
+    const correct = color === this.displayColor;
+    if (correct) {
+      this.combo++;
+      this.correct++;
+      if (this.combo > this.maxCombo) this.maxCombo = this.combo;
+      const pts = 10 + Math.min(this.combo - 1, 5) * 5; // combo bonus: +5 per combo up to +25
+      this.score += pts;
+      beep(660 + this.combo * 30, 0.08, 'sine', 0.05);
+      document.getElementById('st-combo').textContent = this.combo > 1 ? '🔥 ' + this.combo + ' 连击！' : '';
+    } else {
+      this.combo = 0;
+      this.incorrect++;
+      this.score = Math.max(0, this.score - 5);
+      beep(180, 0.25, 'square', 0.06);
+      document.getElementById('st-combo').textContent = '❌';
+    }
+    document.getElementById('st-score').textContent = this.score;
+    this.nextWord();
+  },
+
+  finish() {
+    this.running = false;
+    if (this.timer) clearInterval(this.timer);
+    document.getElementById('st-timer').textContent = '0';
+    document.getElementById('st-timer').classList.remove('urgent');
+    document.getElementById('st-word').textContent = '';
+    document.getElementById('st-combo').textContent = '';
+
+    const isNew = Storage.setBest('stroop', this.score);
+    beep(isNew ? 660 : 440, 0.3, 'sine', 0.08);
+
+    const results = document.getElementById('st-results');
+    results.style.display = 'block';
+    results.innerHTML = `
+      <h3>挑战结束！</h3>
+      <div class="big-score">${this.score}</div>
+      ${isNew ? '<div class="new-best">🎉 新纪录！</div>' : ''}
+      <div class="details">
+        正确: <b>${this.correct}</b> &nbsp; 错误: <b>${this.incorrect}</b> &nbsp;
+        最大连击: <b>${this.maxCombo}</b> &nbsp; 准确率: <b>${this.correct+this.incorrect > 0 ? Math.round(this.correct/(this.correct+this.incorrect)*100) : 0}%</b>
+      </div>
+      <button class="btn" onclick="Stroop.start()">再来一局</button>
+      <button class="btn outline sm" style="margin-left:8px" onclick="App.showDashboard()">返回主页</button>
+    `;
+    App.updateBestDisplay();
+  }
+};
+
+// Stroop button handlers
+document.querySelectorAll('#st-btns .stroop-btn').forEach(btn => {
+  btn.addEventListener('click', () => Stroop.answer(btn.dataset.color));
+});
+
+// Stroop keyboard support
+document.addEventListener('keydown', e => {
+  if (App.currentGame !== 'stroop' || !Stroop.running) return;
+  const keyMap = {
+    '1': 'red', 'r': 'red', 'R': 'red',
+    '2': 'blue', 'b': 'blue', 'B': 'blue',
+    '3': 'green', 'g': 'green', 'G': 'green',
+    '4': 'yellow', 'y': 'yellow', 'Y': 'yellow',
+  };
+  const color = keyMap[e.key];
+  if (color) { e.preventDefault(); Stroop.answer(color); }
+});
+
+// ===== Schulte Table Game =====
+const Schulte = {
+  grid: [],
+  nextTarget: 1,
+  timer: null,
+  startTime: 0,
+  running: false,
+  finished: false,
+  elapsed: 0,
+
+  init() {
+    this.nextTarget = 1; this.elapsed = 0;
+    this.running = false; this.finished = false;
+    if (this.timer) clearInterval(this.timer);
+    document.getElementById('sc-time').textContent = '0.0s';
+    document.getElementById('sc-next').textContent = '1';
+    document.getElementById('sc-start').style.display = 'block';
+    document.getElementById('sc-results').style.display = 'none';
+    document.getElementById('sc-best-disp').textContent = (Storage.getBestTime('schulte') || '--') + 's';
+    this.shuffleGrid();
+    this.renderGrid();
+  },
+
+  shuffleGrid() {
+    this.grid = Array.from({length: 25}, (_, i) => i + 1);
+    // Fisher-Yates shuffle
+    for (let i = this.grid.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [this.grid[i], this.grid[j]] = [this.grid[j], this.grid[i]];
+    }
+  },
+
+  renderGrid() {
+    const gridEl = document.getElementById('sc-grid');
+    gridEl.innerHTML = '';
+    this.grid.forEach(num => {
+      const cell = document.createElement('div');
+      cell.className = 'schulte-cell';
+      cell.textContent = num;
+      cell.dataset.num = num;
+      cell.addEventListener('click', () => this.clickCell(cell, num));
+      gridEl.appendChild(cell);
+    });
+    // Highlight the first target
+    this.updateNextHighlight();
+  },
+
+  updateNextHighlight() {
+    document.querySelectorAll('#sc-grid .schulte-cell').forEach(c => {
+      c.classList.remove('next');
+      if (!c.classList.contains('found') && parseInt(c.dataset.num) === this.nextTarget) {
+        c.classList.add('next');
+      }
+    });
+  },
+
+  clickCell(cell, num) {
+    if (this.finished) return;
+
+    // Start timer on first click
+    if (!this.running) {
+      this.running = true;
+      this.startTime = performance.now();
+      this.timer = setInterval(() => {
+        this.elapsed = (performance.now() - this.startTime) / 1000;
+        document.getElementById('sc-time').textContent = this.elapsed.toFixed(1) + 's';
+      }, 100);
+    }
+
+    if (num === this.nextTarget) {
+      cell.classList.add('found');
+      beep(520 + num * 15, 0.06, 'sine', 0.04);
+      this.nextTarget++;
+      document.getElementById('sc-next').textContent = this.nextTarget <= 25 ? this.nextTarget : '✓';
+      this.updateNextHighlight();
+      if (this.nextTarget > 25) this.finish();
+    } else {
+      cell.classList.add('shake');
+      beep(150, 0.15, 'square', 0.05);
+      setTimeout(() => cell.classList.remove('shake'), 300);
+    }
+  },
+
+  finish() {
+    this.finished = true;
+    this.running = false;
+    if (this.timer) clearInterval(this.timer);
+    this.elapsed = (performance.now() - this.startTime) / 1000;
+    document.getElementById('sc-time').textContent = this.elapsed.toFixed(1) + 's';
+
+    const isNew = Storage.setBestTime('schulte', this.elapsed);
+    beep(isNew ? 660 : 440, 0.3, 'sine', 0.08);
+
+    const results = document.getElementById('sc-results');
+    results.style.display = 'block';
+    results.innerHTML = `
+      <h3>完成！</h3>
+      <div class="big-score">${this.elapsed.toFixed(1)}s</div>
+      ${isNew ? '<div class="new-best">🎉 新纪录！</div>' : ''}
+      <div class="details">最佳记录: <b>${(Storage.getBestTime('schulte') || this.elapsed).toFixed(1)}s</b></div>
+      <button class="btn" onclick="Schulte.init()">再来一局</button>
+      <button class="btn outline sm" style="margin-left:8px" onclick="App.showDashboard()">返回主页</button>
+    `;
+    document.getElementById('sc-best-disp').textContent = (Storage.getBestTime('schulte') || this.elapsed).toFixed(1) + 's';
+    App.updateBestDisplay();
+  }
+};
+
+// ===== Init =====
+document.getElementById('btn-home').addEventListener('click', () => App.showDashboard());
+
+// Hook up start buttons
+document.getElementById('nb-start').addEventListener('click', () => NBack.start());
+document.getElementById('st-start').addEventListener('click', () => Stroop.start());
+document.getElementById('sc-start').addEventListener('click', () => Schulte.init());
+
+// Initial best scores display
+App.updateBestDisplay();
+</script>
+
+</body>
+</html>
