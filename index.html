@@ -105,6 +105,23 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
 .nback-cell.lit { border-color: rgba(255,255,255,.4); transform: scale(1.04); }
 .nback-cell.match-hit { box-shadow: 0 0 24px var(--green); border-color: var(--green); }
 .nback-cell.match-miss { box-shadow: 0 0 24px var(--red); border-color: var(--red); }
+.nback-cell.too-late { border-color: var(--red); opacity: .5; }
+.nback-miss-overlay {
+  position: absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  font-size: 1.5rem; font-weight:900; color: var(--red); pointer-events:none;
+  animation: missPop .6s ease-out forwards;
+}
+@keyframes missPop { 0%{opacity:1;transform:translate(-50%,-50%) scale(1)} 100%{opacity:0;transform:translate(-50%,-50%) scale(1.6)} }
+.nback-grid { position: relative; }
+.nback-timer-bar {
+  width: min(320px, 80vw); height: 4px; background: rgba(255,255,255,.08);
+  border-radius: 2px; margin: 0 auto; overflow: hidden;
+}
+.nback-timer-bar .fill {
+  height: 100%; background: var(--accent); border-radius: 2px;
+  transition: width .1s linear;
+}
+.nback-timer-bar .fill.urgent { background: var(--red); }
 .nback-response { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
 .resp-btn {
   padding: 14px 24px; border-radius: var(--radius-sm); font-size: 1rem; font-weight: 700;
@@ -265,7 +282,10 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
     <div class="nback-tutorial-guide" id="nb-guide" style="display:none"></div>
     <div class="nback-phase" id="nb-phase"></div>
     <div class="nback-history-row" id="nb-history"></div>
-    <div class="nback-grid" id="nb-grid"></div>
+    <div class="nback-timer-bar" id="nb-timer-bar"><div class="fill" id="nb-timer-fill"></div></div>
+    <div style="position:relative;width:min(320px,80vw)" id="nb-grid-wrap">
+      <div class="nback-grid" id="nb-grid"></div>
+    </div>
     <div class="nback-response" id="nb-response">
       <div class="resp-btn" id="resp-pos">📍 位置匹配<span class="key">按键 A</span></div>
       <div class="resp-btn" id="resp-col">🎨 颜色匹配<span class="key">按键 L</span></div>
@@ -395,7 +415,8 @@ const NBack = {
   running: false,
   respondedThisTrial: {pos: false, col: false},
   tutorialMode: false,
-  warmupIdx: 0,     // which warmup trial we're on
+  responseWindowOpen: false, // true while cell is lit; false after display time ends
+  missTimer: null,           // fires when response window closes to check for misses     // which warmup trial we're on
 
   COLORS: ['#4da6ff','#4cdf80','#f7545c','#f7c948','#ff8c42','#c084fc'],
 
@@ -426,10 +447,43 @@ const NBack = {
   _bindLevels() {
     document.querySelectorAll('#nb-levels button').forEach(btn => {
       btn.onclick = () => {
-        if (this.running) return;
-        this.n = parseInt(btn.dataset.n);
-        document.querySelectorAll('#nb-levels button').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
+        const newN = parseInt(btn.dataset.n);
+        if (this.n === newN) return;
+        // Allow level switching at any time: during init, or during running game/tutorial
+        if (this.running) {
+          // Stop current run, switch level, restart
+          if (this.trialTimer) clearTimeout(this.trialTimer);
+          if (this.missTimer) clearTimeout(this.missTimer);
+          this.running = false;
+          // Remove stale miss overlays
+          document.querySelectorAll('.nback-miss-overlay').forEach(e => e.remove());
+          this.n = newN;
+          document.querySelectorAll('#nb-levels button').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          // Restart in the same mode
+          if (this.tutorialMode) {
+            this._genTutorialSeq();
+            this.tutorial.step = 0;
+            this.tutorial.responses = [];
+            this.currentIdx = 0;
+            this.running = true;
+            this.tutorial._step0();
+          } else {
+            this.generateSequence();
+            this.currentIdx = 0;
+            this.responses = [];
+            this.running = true;
+            document.getElementById('nb-response').style.display = 'none';
+            document.getElementById('nb-trial').textContent = '0/' + this.totalTrials;
+            document.getElementById('nb-score').textContent = '0';
+            this._showPhase('warmup', '', '');
+            this.runTrial();
+          }
+        } else {
+          this.n = newN;
+          document.querySelectorAll('#nb-levels button').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+        }
       };
     });
   },
@@ -523,9 +577,15 @@ const NBack = {
   /* ── Run one trial ── */
   runTrial() {
     if (this.currentIdx >= this.trials.length) { this.finish(); return; }
+    // Clear any stale timers
+    if (this.trialTimer) clearTimeout(this.trialTimer);
+    if (this.missTimer) clearTimeout(this.missTimer);
+    document.querySelectorAll('.nback-miss-overlay').forEach(e => e.remove());
 
     const trial = this.trials[this.currentIdx];
     const isWarmup = this.currentIdx < this.n;
+    const hasPosMatch = isWarmup ? false : this.posMatch[this.currentIdx];
+    const hasColMatch = isWarmup ? false : this.colMatch[this.currentIdx];
 
     // Update display
     if (isWarmup) {
@@ -540,18 +600,53 @@ const NBack = {
     }
 
     this._showCells(trial);
+    this.responseWindowOpen = true;
+
+    // Timer bar animation
+    const bar = document.getElementById('nb-timer-fill');
+    bar.style.transition = 'none'; bar.style.width = '100%';
+    bar.classList.remove('urgent');
+    void bar.offsetWidth; // force reflow
+    bar.style.transition = 'width ' + (this.displayMs / 1000) + 's linear';
+    bar.style.width = '0%';
+    setTimeout(() => { if (this.responseWindowOpen) bar.classList.add('urgent'); }, this.displayMs * 0.7);
 
     // Phase label
     if (isWarmup) {
-      this._showPhase('warmup', '👀 暖场阶段', '只需观察并记住，第 ' + (this.n + 1) + ' 步开始答题。现在 — ' + this.n + '-Back 意思是：等下第 ' + (this.n + 1) + ' 步和第 1 步比较');
+      this._showPhase('warmup', '👀 暖场阶段', '只需观察并记住。' + this.n + '-Back：第 ' + (this.n + 1) + ' 步和第 1 步比较');
     } else if (this.currentIdx === this.n) {
       const compareTo = this.currentIdx - this.n + 1;
-      this._showPhase('active-phase', '🎯 正式开始！', '当前与第 ' + compareTo + ' 步比较。位置相同按 A｜颜色相同按 L');
+      this._showPhase('active-phase', '🎯 答题！', '当前与第 ' + compareTo + ' 步比较');
     }
 
-    // After display time, hide and wait ITI
-    this.trialTimer = setTimeout(() => {
+    // ── Response window: closes after displayMs ──
+    this.missTimer = setTimeout(() => {
+      this.responseWindowOpen = false;
       this._clearCells();
+      bar.style.transition = 'none'; bar.style.width = '0%'; bar.classList.remove('urgent');
+
+      // Check for misses (only in active phase)
+      if (!isWarmup) {
+        let missed = '';
+        if (hasPosMatch && !this.respondedThisTrial.pos) missed += 'pos';
+        if (hasColMatch && !this.respondedThisTrial.col) missed += (missed ? ',' : '') + 'col';
+        // Also mark false alarms as "wrong" - they were already handled in respond()
+
+        if (missed) {
+          // Show MISS overlay
+          this._showMissOverlay(trial.pos, hasPosMatch && !this.respondedThisTrial.pos, hasColMatch && !this.respondedThisTrial.col);
+          // Record as miss (they didn't respond)
+          // already recorded as {pos:false, col:false} in responses array
+          this._updateScore();
+        }
+
+        // Clear response highlights
+        document.getElementById('resp-pos').className = 'resp-btn';
+        document.getElementById('resp-col').className = 'resp-btn';
+        document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.remove('match-hit', 'match-miss'));
+      }
+
+      // ITI then next trial
       this.trialTimer = setTimeout(() => {
         this.currentIdx++;
         this.runTrial();
@@ -559,34 +654,26 @@ const NBack = {
     }, this.displayMs);
   },
 
+  _showMissOverlay(pos, missedPos, missedCol) {
+    const cells = document.querySelectorAll('#nb-grid .nback-cell');
+    if (cells[pos]) cells[pos].classList.add('match-miss');
+    const wrap = document.getElementById('nb-grid-wrap');
+    const overlay = document.createElement('div');
+    overlay.className = 'nback-miss-overlay';
+    let label = '';
+    if (missedPos && missedCol) label = '漏！位置+颜色';
+    else if (missedPos) label = '漏！位置';
+    else if (missedCol) label = '漏！颜色';
+    overlay.textContent = label;
+    wrap.appendChild(overlay);
+    setTimeout(() => overlay.remove(), 600);
+  },
+
   _showPhase(cls, title, subtitle) {
     const el = document.getElementById('nb-phase');
     el.className = 'nback-phase ' + (cls || '');
     if (title) el.innerHTML = title + (subtitle ? '<br><small style="font-weight:400;opacity:.8">' + subtitle + '</small>' : '');
     else el.textContent = '';
-  },
-
-  /* ── Player response ── */
-  respond(type) {
-    if (!this.running || this.currentIdx < this.n) return; // ignore during warmup
-    const respIdx = this.responses.length - 1;
-    if (respIdx < 0 || this.respondedThisTrial[type]) return;
-    this.respondedThisTrial[type] = true;
-    this.responses[respIdx][type] = true;
-
-    const actual = type === 'pos' ? this.posMatch[this.currentIdx] : this.colMatch[this.currentIdx];
-    const btn = document.getElementById(type === 'pos' ? 'resp-pos' : 'resp-col');
-    btn.classList.add(actual ? 'correct' : 'wrong');
-    const trial = this.trials[this.currentIdx];
-    const cell = document.querySelectorAll('#nb-grid .nback-cell')[trial.pos];
-    if (cell) cell.classList.add(actual ? 'match-hit' : 'match-miss');
-
-    setTimeout(() => {
-      btn.classList.remove('correct', 'wrong');
-      document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.remove('match-hit', 'match-miss'));
-    }, 300);
-
-    this._updateScore();
   },
 
   _updateScore() {
@@ -603,7 +690,12 @@ const NBack = {
   /* ── Finish ── */
   finish() {
     this.running = false;
+    this.responseWindowOpen = false;
     if (this.trialTimer) clearTimeout(this.trialTimer);
+    if (this.missTimer) clearTimeout(this.missTimer);
+    document.querySelectorAll('.nback-miss-overlay').forEach(e => e.remove());
+    document.getElementById('nb-timer-fill').style.width = '100%';
+    document.getElementById('nb-timer-fill').classList.remove('urgent');
     document.getElementById('nb-trial').textContent = this.totalTrials + '/' + this.totalTrials;
     this._clearCells();
     document.getElementById('resp-pos').className = 'resp-btn';
@@ -640,43 +732,69 @@ const NBack = {
   },
 
   /* ═══════════════════════════════════════
-     🎓 INTERACTIVE TUTORIAL
+     🎓 INTERACTIVE TUTORIAL — dynamic N level
      ═══════════════════════════════════════
-     Uses a fixed sequence. Player plays 1-Back.
-     Warmup: 1 trial. Active: 4 trials. */
-  tutorial: {
-    // Fixed 1-Back sequence (5 trials = 1 warmup + 4 active)
-    seq: [
-      { pos: 0, col: '#4da6ff',  // warmup 0
-        posMatch: false, colMatch: false },
-      { pos: 0, col: '#4cdf80',  // active 1: POSITION matches warmup 0, color different
-        posMatch: true,  colMatch: false },
-      { pos: 4, col: '#4cdf80',  // active 2: COLOR matches active 1, position different
-        posMatch: false, colMatch: true },
-      { pos: 8, col: '#f7545c',  // active 3: both different
-        posMatch: false, colMatch: false },
-      { pos: 8, col: '#f7545c',  // active 4: BOTH match active 3
-        posMatch: true,  colMatch: true },
-    ],
-    step: 0,   // current index in seq
-    responses: [], // per active trial {pos, col}
-    responded: {pos: false, col: false},
+     Sequ = warmup (N) + 4 active (pos-only, col-only, neither, both) */
+  _genTutorialSeq() {
+    const n = this.n;
+    const cols = this.COLORS;
+    const seq = [];
+    const msgs = [];
 
-    messages: [
-      // 0: warmup
-      '👀 <span class="step-badge">暖场</span>这是第 <b>1</b> 步。<br>记住这个格子的 <b>位置</b>（左上角）和 <b>颜色</b>（蓝色）。<br><small>1-Back 的意思是：下一步就和这一步比较。</small>',
-      // 1: pos match only
-      '🎯 <span class="step-badge">第 2 步</span>和上一步比较：<br><b>位置</b>一样吗？（都在左上角→一样！）<br><b>颜色</b>一样吗？（蓝 vs 绿→不一样）<br>👉 请按 <kbd>A</kbd> 键（位置匹配）',
-      // 2: col match only
-      '🎯 <span class="step-badge">第 3 步</span>和上一步比较：<br>位置一样吗？（左上 vs 中间→不一样）<br><b>颜色</b>一样吗？（都是绿→一样！）<br>👉 请按 <kbd>L</kbd> 键（颜色匹配）',
-      // 3: neither matches
-      '🎯 <span class="step-badge">第 4 步</span>和上一步比较：<br>位置一样吗？（不一样）<br>颜色一样吗？（不一样）<br>👉 <b>什么都不按</b>，等下一步出现',
-      // 4: both match
-      '🎯 <span class="step-badge">第 5 步</span>和上一步比较：<br>位置一样吗？（都是右下角→一样！）<br>颜色一样吗？（都是红色→一样！）<br>👉 请按 <kbd>A</kbd> 和 <kbd>L</kbd>（位置和颜色都匹配）',
-    ],
+    // Generate warmup (N random trials)
+    for (let w = 0; w < n; w++) {
+      seq.push({ pos: Math.floor(Math.random() * 9), col: cols[Math.floor(Math.random() * cols.length)],
+        posMatch: false, colMatch: false });
+      msgs.push('👀 <span class="step-badge">暖场 ' + (w + 1) + '/' + n + '</span>只需观察并记住这个格子。<br><small>' + n + '-Back：等你看到第 <b>' + (n + 1) + '</b> 步时，就和第 <b>1</b> 步比较。</small>');
+    }
+
+    // Active 1: pos MATCH, color different
+    seq.push({
+      pos: seq[n - 1].pos, // same pos as last warmup trial
+      col: NBack._randColorExcept(seq[n - 1].col),
+      posMatch: true, colMatch: false
+    });
+    msgs.push('🎯 <span class="step-badge">第 ' + (n + 1) + ' 步</span>和第 1 步比较：<br><b>位置</b>一样吗？（一样！）<br><b>颜色</b>一样吗？（不一样）<br>👉 请按 <kbd>A</kbd>（位置匹配）');
+
+    // Active 2: pos different, col MATCH
+    seq.push({
+      pos: NBack._randExcept(seq[n].pos, 9),
+      col: seq[n].col, // same color as active 1
+      posMatch: false, colMatch: true
+    });
+    msgs.push('🎯 <span class="step-badge">第 ' + (n + 2) + ' 步</span>和第 2 步比较：<br>位置一样吗？（不一样）<br><b>颜色</b>一样吗？（一样！）<br>👉 请按 <kbd>L</kbd>（颜色匹配）');
+
+    // Active 3: NEITHER matches
+    seq.push({
+      pos: NBack._randExcept(seq[n + 1].pos, 9),
+      col: NBack._randColorExcept(seq[n + 1].col),
+      posMatch: false, colMatch: false
+    });
+    msgs.push('🎯 <span class="step-badge">第 ' + (n + 3) + ' 步</span>和第 3 步比较：<br>位置一样吗？（不一样）<br>颜色一样吗？（不一样）<br>👉 <b>什么都不按</b>，等下一步');
+
+    // Active 4: BOTH match
+    seq.push({
+      pos: seq[n + 2].pos, // same pos as active 3
+      col: seq[n + 2].col, // same color as active 3
+      posMatch: true, colMatch: true
+    });
+    msgs.push('🎯 <span class="step-badge">第 ' + (n + 4) + ' 步</span>和第 4 步比较：<br>位置一样吗？（一样！）<br>颜色一样吗？（一样！）<br>👉 同时按 <kbd>A</kbd> 和 <kbd>L</kbd>');
+
+    this.tutorial.seq = seq;
+    this.tutorial.messages = msgs;
+  },
+
+  tutorial: {
+    seq: [],
+    messages: [],
+    step: 0,
+    responses: [],
+    responded: {pos: false, col: false},
+    _autoTimer: null,
+    _displayTimer: null,
+    _resolved: false, // prevent double-advance race
 
     start() {
-      NBack.n = 1;
       NBack.tutorialMode = true;
       NBack.running = true;
       NBack.currentIdx = 0;
@@ -695,57 +813,126 @@ const NBack = {
       document.getElementById('resp-col').className = 'resp-btn';
       document.getElementById('nb-phase').textContent = '';
       document.getElementById('nb-phase').className = 'nback-phase';
+      document.getElementById('nb-timer-fill').style.width = '100%';
       NBack._clearCells();
-      document.getElementById('nb-guide').innerHTML = this.messages[0];
+
+      // Activate current N level button
       document.querySelectorAll('#nb-levels button').forEach(b => b.classList.remove('active'));
-      document.querySelector('#nb-levels button[data-n="1"]').classList.add('active');
+      const btn = document.querySelector('#nb-levels button[data-n="' + NBack.n + '"]');
+      if (btn) btn.classList.add('active');
 
-      // Show first (warmup) trial
+      NBack._genTutorialSeq();
+      this._step0();
+    },
+
+    _step0() {
+      this.step = 0;
       const trial = this.seq[0];
+      document.getElementById('nb-guide').innerHTML = this.messages[0];
+      NBack.currentIdx = 0;
       NBack._showCells(trial);
-      NBack._showPhase('warmup', '👀 暖场', '观察并记住，无需操作');
+      NBack._showPhase('warmup', '👀 暖场 ' + NBack.n + ' 步', '观察并记住，无需操作。' + NBack.n + '-Back：第 ' + (NBack.n + 1) + ' 步和第 1 步比较');
 
-      setTimeout(() => {
-        NBack._clearCells();
+      // Show all warmup trials in sequence, then start active
+      let w = 1;
+      const showWarmup = () => {
+        if (w >= NBack.n) {
+          // Warmup done, start active
+          setTimeout(() => {
+            NBack._clearCells();
+            setTimeout(() => {
+              this.step = NBack.n;
+              NBack.currentIdx = NBack.n;
+              this._run();
+            }, 600);
+          }, 1500);
+          return;
+        }
         setTimeout(() => {
-          this.step = 1;
-          NBack.currentIdx = 1;
-          this._run();
-        }, 600);
-      }, 2000);
+          NBack._clearCells();
+          document.getElementById('nb-guide').innerHTML = this.messages[w];
+          NBack.currentIdx = w;
+          setTimeout(() => {
+            NBack._showCells(this.seq[w]);
+            w++;
+            showWarmup();
+          }, 400);
+        }, 1800);
+      };
+      setTimeout(() => showWarmup(), 2000);
     },
 
     _run() {
       if (this.step >= this.seq.length) { this._finish(); return; }
+      if (this._displayTimer) clearTimeout(this._displayTimer);
+      if (this._autoTimer) clearTimeout(this._autoTimer);
+      this._resolved = false;
+      document.querySelectorAll('.nback-miss-overlay').forEach(e => e.remove());
 
       const trial = this.seq[this.step];
       NBack._showCells(trial);
       document.getElementById('nb-guide').innerHTML = this.messages[this.step];
-      NBack._showPhase('active-phase', '🎯 答题阶段', '第 ' + (this.step + 1) + ' 步 / 共 5 步');
+      NBack._showPhase('active-phase', '🎯 答题', '第 ' + (this.step + 1) + ' 步 / 共 ' + this.seq.length);
 
-      // Only show response buttons for steps that need a response
-      const showRespBtns = this.step !== 3; // step 3 is the "no match" step
-      document.getElementById('nb-response').style.display = showRespBtns ? 'flex' : 'none';
+      const isNeither = !trial.posMatch && !trial.colMatch;
+      document.getElementById('nb-response').style.display = isNeither ? 'none' : 'flex';
+      document.getElementById('resp-pos').className = 'resp-btn';
+      document.getElementById('resp-col').className = 'resp-btn';
       this.responded = {pos: false, col: false};
       this.responses.push({pos: false, col: false});
       NBack.respondedThisTrial = {pos: false, col: false};
+      NBack.responseWindowOpen = true;
 
-      // Auto-advance if this is the "no match" step
-      if (this.step === 3) {
-        const autoAdvance = setTimeout(() => {
-          if (!this.responded.pos && !this.responded.col && NBack.running) {
-            // Correct: user didn't press anything
-            this._markCorrect();
-            this._advance();
+      // Timer bar
+      const bar = document.getElementById('nb-timer-fill');
+      bar.style.transition = 'none'; bar.style.width = '100%'; bar.classList.remove('urgent');
+      void bar.offsetWidth;
+      bar.style.transition = 'width ' + (NBack.displayMs / 1000) + 's linear';
+      bar.style.width = '0%';
+      setTimeout(() => { if (NBack.responseWindowOpen) bar.classList.add('urgent'); }, NBack.displayMs * 0.7);
+
+      this._displayTimer = setTimeout(() => {
+        NBack.responseWindowOpen = false;
+        NBack._clearCells();
+        bar.style.transition = 'none'; bar.style.width = '100%'; bar.classList.remove('urgent');
+        if (this._resolved) return; // already handled by respond()
+
+        if (isNeither) {
+          // Correct: user didn't press anything
+          this._markCorrect();
+        } else {
+          const missedPos = trial.posMatch && !this.responded.pos;
+          const missedCol = trial.colMatch && !this.responded.col;
+          if (missedPos || missedCol) {
+            // Show MISS
+            const cells = document.querySelectorAll('#nb-grid .nback-cell');
+            cells[trial.pos].classList.add('match-miss');
+            const wrap = document.getElementById('nb-grid-wrap');
+            const ov = document.createElement('div');
+            ov.className = 'nback-miss-overlay';
+            ov.textContent = '⏰ 超时！';
+            wrap.appendChild(ov);
+            setTimeout(() => ov.remove(), 600);
+            this._markWrong();
           }
-        }, 2500);
-        // Store timer reference to cancel if user incorrectly presses
-        this._autoTimer = autoAdvance;
-      }
+        }
+
+        document.getElementById('resp-pos').className = 'resp-btn';
+        document.getElementById('resp-col').className = 'resp-btn';
+        document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.remove('match-hit', 'match-miss'));
+
+        if (isNeither) this._advance();
+        // For non-neither steps, they must have answered correctly to advance (handled in respond)
+      }, NBack.displayMs);
     },
 
     respond(type) {
       if (!NBack.running || !NBack.tutorialMode) return;
+      if (!NBack.responseWindowOpen) {
+        document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.add('too-late'));
+        setTimeout(() => document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.remove('too-late')), 300);
+        return;
+      }
       if (this.responded[type]) return;
       this.responded[type] = true;
       const respIdx = this.responses.length - 1;
@@ -756,10 +943,9 @@ const NBack = {
 
       const btn = document.getElementById(type === 'pos' ? 'resp-pos' : 'resp-col');
       btn.classList.add(actual ? 'correct' : 'wrong');
-      const cell = document.querySelectorAll('#nb-grid .nback-cell')[trial.pos];
-      if (cell) cell.classList.add(actual ? 'match-hit' : 'match-miss');
+      const cells = document.querySelectorAll('#nb-grid .nback-cell');
+      cells[trial.pos].classList.add(actual ? 'match-hit' : 'match-miss');
 
-      // Show feedback in guide
       const fb = document.getElementById('nb-guide');
       if (actual) {
         fb.innerHTML += '<div style="color:var(--green);margin-top:6px">✅ ' + (type === 'pos' ? '位置' : '颜色') + '匹配 — 正确！</div>';
@@ -770,17 +956,14 @@ const NBack = {
 
       setTimeout(() => {
         btn.classList.remove('correct', 'wrong');
-        document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.remove('match-hit', 'match-miss'));
+        cells.forEach(c => c.classList.remove('match-hit', 'match-miss'));
         if (actual) this._checkAdvance();
       }, 400);
     },
 
-    // Check if user has responded correctly for this step and advance
     _checkAdvance() {
       const trial = this.seq[this.step];
-      const needPos = trial.posMatch;
-      const needCol = trial.colMatch;
-      if ((!needPos || this.responded.pos) && (!needCol || this.responded.col)) {
+      if ((!trial.posMatch || this.responded.pos) && (!trial.colMatch || this.responded.col)) {
         this._markCorrect();
         this._advance();
       }
@@ -794,14 +977,17 @@ const NBack = {
     },
 
     _markWrong() {
-      // Flash grid red
       document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.add('match-miss'));
       setTimeout(() => document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.remove('match-miss')), 300);
     },
 
     _advance() {
+      if (this._resolved) return;
+      this._resolved = true;
       if (this._autoTimer) { clearTimeout(this._autoTimer); this._autoTimer = null; }
+      if (this._displayTimer) { clearTimeout(this._displayTimer); }
       NBack._clearCells();
+      document.getElementById('nb-timer-fill').style.width = '100%';
       this.step++;
       NBack.currentIdx++;
       document.getElementById('nb-response').style.display = 'none';
@@ -813,12 +999,15 @@ const NBack = {
 
     _finish() {
       if (this._autoTimer) clearTimeout(this._autoTimer);
+      if (this._displayTimer) clearTimeout(this._displayTimer);
       NBack.running = false;
       NBack.currentIdx = 0;
       document.getElementById('nb-trial').textContent = '完成';
       document.getElementById('nb-response').style.display = 'flex';
       document.getElementById('nb-phase').textContent = '';
       document.getElementById('nb-phase').className = 'nback-phase';
+      document.getElementById('nb-timer-fill').style.width = '100%';
+      document.getElementById('nb-timer-fill').classList.remove('urgent');
       NBack._clearCells();
       document.getElementById('resp-pos').className = 'resp-btn';
       document.getElementById('resp-col').className = 'resp-btn';
@@ -844,14 +1033,18 @@ const NBack = {
     this.tutorial.start();
   },
 
-  // Override respond to route to tutorial or normal mode
+  // Unified respond: route to tutorial or normal mode
   respond(type) {
     if (this.tutorialMode) {
       this.tutorial.respond(type);
       return;
     }
-    // Normal mode respond (defined above inline to avoid method ordering issues)
     if (!this.running || this.currentIdx < this.n) return;
+    if (!this.responseWindowOpen) {
+      document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.add('too-late'));
+      setTimeout(() => document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.remove('too-late')), 300);
+      return;
+    }
     const respIdx = this.responses.length - 1;
     if (respIdx < 0 || this.respondedThisTrial[type]) return;
     this.respondedThisTrial[type] = true;
@@ -861,12 +1054,12 @@ const NBack = {
     const btn = document.getElementById(type === 'pos' ? 'resp-pos' : 'resp-col');
     btn.classList.add(actual ? 'correct' : 'wrong');
     const trial = this.trials[this.currentIdx];
-    const cell = document.querySelectorAll('#nb-grid .nback-cell')[trial.pos];
-    if (cell) cell.classList.add(actual ? 'match-hit' : 'match-miss');
+    const cells = document.querySelectorAll('#nb-grid .nback-cell');
+    cells[trial.pos].classList.add(actual ? 'match-hit' : 'match-miss');
 
     setTimeout(() => {
       btn.classList.remove('correct', 'wrong');
-      document.querySelectorAll('#nb-grid .nback-cell').forEach(c => c.classList.remove('match-hit', 'match-miss'));
+      cells.forEach(c => c.classList.remove('match-hit', 'match-miss'));
     }, 300);
 
     this._updateScore();
