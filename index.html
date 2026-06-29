@@ -129,6 +129,7 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
   transition: all .12s; user-select: none; -webkit-user-select: none;
 }
 .resp-btn:active { transform: scale(.94); }
+.resp-btn { touch-action: manipulation; -webkit-touch-callout: none; }
 .resp-btn .key { font-size: .7rem; color: var(--text2); display: block; margin-top: 2px; }
 .resp-btn.correct { background: var(--green); border-color: var(--green); color: #000; }
 .resp-btn.wrong { background: var(--red); border-color: var(--red); color: #fff; }
@@ -609,8 +610,14 @@ const NBack = {
   },
 
   _bindRespBtns() {
-    document.getElementById('resp-pos').onclick = () => this.respond('pos');
-    document.getElementById('resp-col').onclick = () => this.respond('col');
+    const posBtn = document.getElementById('resp-pos');
+    const colBtn = document.getElementById('resp-col');
+    // Use pointerdown for instant mobile response + multi-touch support
+    posBtn.onpointerdown = e => { e.preventDefault(); this.respond('pos'); };
+    colBtn.onpointerdown = e => { e.preventDefault(); this.respond('col'); };
+    // Fallback for desktop click
+    posBtn.onclick = e => { e.preventDefault(); this.respond('pos'); };
+    colBtn.onclick = e => { e.preventDefault(); this.respond('col'); };
   },
 
   renderGrid() {
