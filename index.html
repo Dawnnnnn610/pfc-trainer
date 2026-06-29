@@ -161,6 +161,22 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
 }
 .nback-history-dot.filled { border-color: rgba(255,255,255,.6); }
 
+/* ===== N-Back Menu ===== */
+.nback-menu { text-align: center; }
+.nback-menu .subtitle { color: var(--text2); margin-bottom: 24px; font-size: .95rem; }
+.nback-menu-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; max-width: 440px; margin: 0 auto; }
+.nback-menu-btn {
+  background: var(--surface); border: 1px solid rgba(255,255,255,.08);
+  border-radius: var(--radius); padding: 22px 16px; cursor: pointer;
+  color: var(--text); transition: all .2s; text-align: center;
+}
+.nback-menu-btn:hover { transform: translateY(-2px); border-color: var(--accent); box-shadow: var(--shadow); }
+.nback-menu-btn .icon { font-size: 2rem; margin-bottom: 6px; }
+.nback-menu-btn div:first-of-type { font-size: .95rem; }
+.nback-menu-btn div { font-size: 1.05rem; font-weight: 700; margin-bottom: 4px; }
+.nback-menu-btn small { font-size: .75rem; color: var(--text2); display: block; }
+.nback-menu-btn.tutorial-btn { border-color: rgba(124,111,247,.3); background: rgba(124,111,247,.08); }
+
 /* ===== Stroop ===== */
 .stroop-word {
   font-size: clamp(60px, 15vw, 120px); font-weight: 900; text-align: center;
@@ -230,7 +246,7 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
 <!-- ===== Navigation ===== -->
 <nav>
   <div class="logo">🧠 PFC<span>Trainer</span></div>
-  <button id="btn-home" style="display:none" onclick="App.showDashboard()">← 返回主页</button>
+  <button id="btn-home" style="display:none" onclick="App.goBack()">← 返回</button>
 </nav>
 
 <!-- ===== Main Container ===== -->
@@ -264,6 +280,38 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
   </div>
 </section>
 
+<!-- N-Back Menu -->
+<section id="game-nback-menu" class="screen">
+  <div class="game-header">
+    <h2>🧩 Dual N-Back</h2>
+  </div>
+  <div class="nback-menu">
+    <p class="subtitle">选择训练模式</p>
+    <div class="nback-menu-grid">
+      <button class="nback-menu-btn tutorial-btn" onclick="App.startNBack('tutorial')">
+        <div class="icon">🎓</div>
+        <div>教学模式</div>
+        <small>互动引导，一步步教你规则</small>
+      </button>
+      <button class="nback-menu-btn" onclick="App.startNBack(1)">
+        <div class="icon">1️⃣</div>
+        <div>1-Back</div>
+        <small>入门难度 · 和上一步比较</small>
+      </button>
+      <button class="nback-menu-btn" onclick="App.startNBack(2)">
+        <div class="icon">2️⃣</div>
+        <div>2-Back</div>
+        <small>中等难度 · 和前两步比较</small>
+      </button>
+      <button class="nback-menu-btn" onclick="App.startNBack(3)">
+        <div class="icon">3️⃣</div>
+        <div>3-Back</div>
+        <small>困难 · 和前三步比较</small>
+      </button>
+    </div>
+  </div>
+</section>
+
 <!-- Dual N-Back Game -->
 <section id="game-nback" class="screen">
   <div class="game-header">
@@ -290,8 +338,8 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
       <div class="resp-btn" id="resp-pos">📍 位置匹配<span class="key">按键 A</span></div>
       <div class="resp-btn" id="resp-col">🎨 颜色匹配<span class="key">按键 L</span></div>
     </div>
-    <button class="btn" id="nb-start" style="margin-top:8px">开始训练</button>
-    <button class="btn" id="nb-tutorial-btn" style="margin-top:8px;margin-left:8px" onclick="NBack.startTutorial()">🎓 教学关卡</button>
+    <button class="btn" id="nb-start" style="margin-top:8px;display:none">开始训练</button>
+    <button class="btn" id="nb-tutorial-start" style="margin-top:8px;display:none">🎓 开始教学</button>
   </div>
   <div class="results" id="nb-results" style="display:none"></div>
 </section>
@@ -375,12 +423,42 @@ const App = {
   },
   startGame(game) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    document.getElementById('game-'+game).classList.add('active');
+    if (game === 'nback') {
+      document.getElementById('game-nback-menu').classList.add('active');
+      document.getElementById('btn-home').style.display = 'block';
+      this.currentGame = 'nback-menu';
+    } else {
+      document.getElementById('game-'+game).classList.add('active');
+      document.getElementById('btn-home').style.display = 'block';
+      this.currentGame = game;
+      if (game === 'stroop') Stroop.init();
+      if (game === 'schulte') Schulte.init();
+    }
+  },
+
+  startNBack(mode) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('game-nback').classList.add('active');
     document.getElementById('btn-home').style.display = 'block';
-    this.currentGame = game;
-    if (game === 'nback') NBack.init();
-    if (game === 'stroop') Stroop.init();
-    if (game === 'schulte') Schulte.init();
+    this.currentGame = 'nback';
+    NBack.init(mode);
+  },
+
+  showNBackMenu() {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('game-nback-menu').classList.add('active');
+    document.getElementById('btn-home').style.display = 'block';
+    this.currentGame = 'nback-menu';
+  },
+
+  goBack() {
+    if (this.currentGame === 'nback') {
+      this.showNBackMenu();
+    } else if (this.currentGame === 'nback-menu') {
+      this.showDashboard();
+    } else {
+      this.showDashboard();
+    }
   },
   updateBestDisplay() {
     ['nback','stroop','schulte'].forEach(g => {
@@ -436,29 +514,108 @@ const NBack = {
 
   COLORS: ['#4da6ff','#4cdf80','#f7545c','#f7c948','#ff8c42','#c084fc'],
 
-  /* ── Init & UI helpers ── */
-  init() {
-    this.n = 2; this.tutorialMode = false;
-    document.querySelectorAll('#nb-levels button').forEach(b => b.classList.remove('active'));
-    document.querySelector('#nb-levels button[data-n="2"]').classList.add('active');
+  /* ── Init ── */
+  init(mode) {
+    // mode: 1, 2, 3 (normal), or 'tutorial'
+    this.running = false; this.tutorialMode = false; this.responseWindowOpen = false;
+    this._pend.forEach(clearTimeout); this._pend = [];
+    if (this.trialTimer) clearTimeout(this.trialTimer);
+    if (this.missTimer) clearTimeout(this.missTimer);
+    document.querySelectorAll('.nback-miss-overlay').forEach(e => e.remove());
+
     document.getElementById('nb-score').textContent = '0';
     document.getElementById('nb-trial').textContent = '0/' + this.totalTrials;
-    document.getElementById('nb-start').style.display = 'inline-block';
-    document.getElementById('nb-tutorial-btn').style.display = 'inline-block';
     document.getElementById('nb-results').style.display = 'none';
     document.getElementById('nb-guide').style.display = 'none';
     document.getElementById('nb-phase').textContent = '';
     document.getElementById('nb-phase').className = 'nback-phase';
     document.getElementById('nb-history').innerHTML = '';
-    document.getElementById('nb-response').style.display = 'flex';
+    document.getElementById('nb-timer-fill').style.width = '100%';
+    document.getElementById('nb-timer-fill').classList.remove('urgent');
     document.getElementById('resp-pos').className = 'resp-btn';
     document.getElementById('resp-col').className = 'resp-btn';
-    this.running = false;
-    this._pend.forEach(clearTimeout); this._pend = [];
-    if (this.trialTimer) clearTimeout(this.trialTimer);
-    this.renderGrid();
+    document.getElementById('nb-response').style.display = 'flex';
+
+    document.querySelectorAll('#nb-levels button').forEach(b => b.classList.remove('active'));
+
+    if (mode === 'tutorial') {
+      // Tutorial setup: show level buttons + guide + tutorial start button
+      this.n = 2;
+      document.querySelector('#nb-levels button[data-n="2"]').classList.add('active');
+      document.getElementById('nb-guide').style.display = 'block';
+      document.getElementById('nb-guide').innerHTML = '选择难度后点击 <b>"🎓 开始教学"</b><br><small>教学关卡会带你玩一遍完整流程</small>';
+      document.getElementById('nb-start').style.display = 'none';
+      document.getElementById('nb-tutorial-start').style.display = 'inline-block';
+      document.getElementById('nb-trial').textContent = '教学模式';
+      document.getElementById('nb-response').style.display = 'none';
+      this.renderGrid();
+    } else {
+      // Normal mode: selected N, show start button
+      this.n = mode;
+      const activeBtn = document.querySelector('#nb-levels button[data-n="' + mode + '"]');
+      if (activeBtn) activeBtn.classList.add('active');
+      document.getElementById('nb-guide').style.display = 'none';
+      document.getElementById('nb-start').style.display = 'inline-block';
+      document.getElementById('nb-tutorial-start').style.display = 'none';
+      document.getElementById('nb-response').style.display = 'none';
+      this.renderGrid();
+    }
+
     this._bindLevels();
     this._bindRespBtns();
+    this._bindStartBtns();
+  },
+
+  _bindStartBtns() {
+    document.getElementById('nb-start').onclick = () => {
+      if (this.running) return;
+      this.tutorialMode = false;
+      this.generateSequence();
+      this.currentIdx = 0;
+      this.responses = [];
+      this.running = true;
+      document.getElementById('nb-start').style.display = 'none';
+      document.getElementById('nb-tutorial-start').style.display = 'none';
+      document.getElementById('nb-results').style.display = 'none';
+      document.getElementById('nb-guide').style.display = 'none';
+      document.getElementById('nb-history').innerHTML = '';
+      document.getElementById('nb-score').textContent = '0';
+      document.getElementById('resp-pos').className = 'resp-btn';
+      document.getElementById('resp-col').className = 'resp-btn';
+      document.getElementById('nb-response').style.display = 'none';
+      this._showPhase('warmup', '', '');
+      this.runTrial();
+    };
+
+    document.getElementById('nb-tutorial-start').onclick = () => this.startTutorial();
+  },
+
+  startTutorial() {
+    if (this.running) return;
+    this.tutorialMode = true;
+    this.running = true;
+    this.currentIdx = 0;
+    this.tutorial.step = 0;
+    this.tutorial.responses = [];
+    this.tutorial.responded = {pos: false, col: false};
+
+    document.getElementById('nb-start').style.display = 'none';
+    document.getElementById('nb-tutorial-start').style.display = 'none';
+    document.getElementById('nb-results').style.display = 'none';
+    document.getElementById('nb-response').style.display = 'none';
+    document.getElementById('nb-score').textContent = '0';
+    document.getElementById('nb-trial').textContent = '教学关卡';
+    document.getElementById('nb-guide').style.display = 'block';
+    document.getElementById('resp-pos').className = 'resp-btn';
+    document.getElementById('resp-col').className = 'resp-btn';
+    document.getElementById('nb-phase').textContent = '';
+    document.getElementById('nb-phase').className = 'nback-phase';
+    document.getElementById('nb-timer-fill').style.width = '100%';
+    document.getElementById('nb-timer-fill').classList.remove('urgent');
+    this._clearCells();
+
+    this._genTutorialSeq();
+    this.tutorial._showStep();
   },
 
   _bindLevels() {
@@ -542,12 +699,12 @@ const NBack = {
       let pos, col;
       if (i >= this.n) {
         // Active trial: compare to i-n
-        pos = (Math.random() < 0.3)
+        pos = (Math.random() < 0.5)
           ? this.trials[i - this.n].pos
           : this._randExcept(this.trials[i - this.n].pos, 9);
         this.posMatch.push(i >= this.n ? pos === this.trials[i - this.n].pos : false);
 
-        col = (Math.random() < 0.3)
+        col = (Math.random() < 0.5)
           ? this.trials[i - this.n].col
           : this._randColorExcept(this.trials[i - this.n].col);
         this.colMatch.push(i >= this.n ? col === this.trials[i - this.n].col : false);
@@ -726,8 +883,8 @@ const NBack = {
         虚报: <b>${fa}</b> &nbsp; 正确拒绝: <b>${cr}</b><br>
         难度: <b>${this.n}-Back</b>
       </div>
-      <button class="btn" onclick="NBack.init();NBack.start()">再来一局</button>
-      <button class="btn outline sm" style="margin-left:8px" onclick="App.showDashboard()">返回主页</button>
+      <button class="btn" onclick="App.startNBack(NBack.n)">再来一局</button>
+      <button class="btn outline sm" style="margin-left:8px" onclick="App.showNBackMenu()">返回菜单</button>
     `;
     App.updateBestDisplay();
   },
@@ -952,7 +1109,12 @@ const NBack = {
       NBack._schedule(() => {
         btn.classList.remove('correct', 'wrong');
         cells.forEach(c => c.classList.remove('match-hit', 'match-miss'));
-        if (actual) this._checkAdvance();
+        if (actual) {
+          // Correct answer: advance immediately
+          this._markCorrect();
+          this._resolved = true;
+          NBack._schedule(() => { this.step++; this._showStep(); }, 350);
+        }
       }, 400);
     },
 
@@ -1014,7 +1176,7 @@ const NBack = {
           • 可能同时匹配 → 两个都按<br>
           • 可能都不匹配 → 什么都不按
         </div>
-        <button class="btn" style="margin-top:14px" onclick="NBack.init();NBack.start()">开始正式训练</button>
+        <button class="btn" style="margin-top:14px" onclick="App.startNBack(NBack.n)">开始正式训练</button>
       `;
     }
   },
@@ -1048,16 +1210,46 @@ const NBack = {
     const cells = document.querySelectorAll('#nb-grid .nback-cell');
     cells[trial.pos].classList.add(actual ? 'match-hit' : 'match-miss');
 
+    // Immediate feedback + advance: kill the current timer window
+    this.responseWindowOpen = false;
+    this._pend.forEach(clearTimeout); this._pend = [];
+    if (this.missTimer) { clearTimeout(this.missTimer); this.missTimer = null; }
+    this._clearCells();
+
+    // Check if both done or we should wait
+    const needPos = this.posMatch[this.currentIdx], needCol = this.colMatch[this.currentIdx];
+    const bothDone = (!needPos || this.respondedThisTrial.pos) && (!needCol || this.respondedThisTrial.col);
+    // If user pressed wrong (false alarm), reset immediately — show flash then advance
+    if (actual === false) {
+      // False alarm: show MISS overlay
+      const wrap = document.getElementById('nb-grid-wrap');
+      const ov = document.createElement('div');
+      ov.className = 'nback-miss-overlay';
+      ov.textContent = type === 'pos' ? '❌ 位置虚报' : '❌ 颜色虚报';
+      wrap.appendChild(ov);
+      setTimeout(() => ov.remove(), 500);
+      this._updateScore();
+    }
+
     setTimeout(() => {
       btn.classList.remove('correct', 'wrong');
       cells.forEach(c => c.classList.remove('match-hit', 'match-miss'));
     }, 300);
 
     this._updateScore();
+
+    if (bothDone) {
+      // All needed responses done (or false-alarmed): advance immediately
+      document.getElementById('nb-timer-fill').style.width = '100%';
+      document.getElementById('nb-timer-fill').classList.remove('urgent');
+      document.getElementById('resp-pos').className = 'resp-btn';
+      document.getElementById('resp-col').className = 'resp-btn';
+      setTimeout(() => { this.currentIdx++; this.runTrial(); }, 350);
+    }
   }
 };
 
-// Keyboard handler for N-Back (works for both normal & tutorial mode)
+// Keyboard handler for N-Back
 document.addEventListener('keydown', e => {
   if (App.currentGame !== 'nback' || !NBack.running) return;
   if (e.key === 'a' || e.key === 'A') { e.preventDefault(); NBack.respond('pos'); }
@@ -1317,10 +1509,7 @@ const Schulte = {
 };
 
 // ===== Init =====
-document.getElementById('btn-home').addEventListener('click', () => App.showDashboard());
-
-// Hook up start buttons
-document.getElementById('nb-start').addEventListener('click', () => NBack.start());
+// Hook up non-NBack start buttons
 document.getElementById('st-start').addEventListener('click', () => Stroop.start());
 document.getElementById('sc-start').addEventListener('click', () => Schulte.init());
 
