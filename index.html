@@ -742,7 +742,7 @@ const NBack = {
     // Phase label
     if (isWarmup) {
       this._showPhase('warmup', '👀 暖场', this.n + '-Back：第 ' + (this.n + 1) + ' 步和第 1 步比较');
-    } else if (this.currentIdx === this.n) {
+    } else {
       this._showPhase('active-phase', '🎯 答题！', '当前与第 ' + (this.currentIdx - this.n + 1) + ' 步比较');
     }
 
