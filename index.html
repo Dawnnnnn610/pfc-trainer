@@ -185,12 +185,12 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
 /* ===== Stroop ===== */
 .stroop-grid {
   display: grid; grid-template-columns: repeat(3, 1fr);
-  gap: 8px; width: min(320px, 80vw); margin: 0 auto 12px;
+  gap: 10px; width: min(360px, 88vw); margin: 0 auto 12px;
 }
 .stroop-cell {
   aspect-ratio: 1; border-radius: var(--radius-sm);
   display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: 1rem; cursor: pointer;
+  font-weight: 700; font-size: clamp(1.2rem, 3.5vw, 1.5rem); cursor: pointer;
   border: 2px solid rgba(255,255,255,.1);
   background: var(--surface2); color: var(--text);
   transition: all .12s; user-select: none;
@@ -202,7 +202,7 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
 .stroop-cell.word-cell {
   background: transparent; border: 2px dashed rgba(255,255,255,.15);
   cursor: default; pointer-events: none;
-  font-size: clamp(28px, 6vw, 44px); font-weight: 900;
+  font-size: clamp(36px, 7vw, 52px); font-weight: 900;
   transition: color .15s ease;
 }
 .stroop-timer-bar {
@@ -1471,7 +1471,6 @@ const Stroop = {
   renderGrid() {
     const g = document.getElementById('st-grid');
     g.innerHTML = '';
-    // 3×3 grid, center (index 4) = word display
     const layout = ['red','blue','green','yellow','word','purple','orange','white','cyan'];
     layout.forEach(name => {
       const cell = document.createElement('div');
@@ -1481,6 +1480,10 @@ const Stroop = {
       } else {
         cell.className = 'stroop-cell';
         cell.textContent = this.WORDS.find(w => w.name === name).char;
+        // Color the button background to match its character meaning
+        const bg = this.COLORS[name];
+        cell.style.backgroundColor = bg;
+        cell.style.color = (name === 'yellow' || name === 'white') ? '#000' : '#fff';
         cell.addEventListener('click', e => { e.preventDefault(); this.answer(name); });
       }
       g.appendChild(cell);
