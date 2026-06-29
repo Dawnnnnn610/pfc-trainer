@@ -716,7 +716,8 @@ const NBack = {
   trialTimer: null,
   displayMs: 2000,
   itiMs: 400,
-  responses: [],
+  trialStartTime: 0,   // performance.now() when cell lit
+  responses: [],        // {pos:bool, col:bool, posMs:number, colMs:number}
   posMatch: [],
   colMatch: [],
   running: false,
@@ -1084,11 +1085,12 @@ const NBack = {
       document.getElementById('nb-response').style.display = 'flex';
       this.respondedThisTrial = {pos: false, col: false};
       this.trialLocked = false;
-      this.responses.push({pos: false, col: false});
+      this.responses.push({pos: false, col: false, posMs: 0, colMs: 0});
     }
 
     this._showCells(trial);
     this.responseWindowOpen = true;
+    this.trialStartTime = performance.now();
 
     // Timer bar
     const bar = document.getElementById('nb-timer-fill');
@@ -1152,20 +1154,45 @@ const NBack = {
     else el.textContent = '';
   },
 
-  /* ── Scoring system ── */
+  /* ── Scoring system with speed factor ── */
   _calcScore() {
-    // Count raw stats (both dims summed)
     let hits = 0, misses = 0, fa = 0, cr = 0;
+    let totalHitMs = 0, fastestHit = Infinity;
     for (let i = this.n; i < this.trials.length; i++) {
-      const r = this.responses[i - this.n] || {pos: false, col: false};
-      if (this.posMatch[i]) { if (r.pos) hits++; else misses++; } else { if (r.pos) fa++; else cr++; }
-      if (this.colMatch[i]) { if (r.col) hits++; else misses++; } else { if (r.col) fa++; else cr++; }
+      const r = this.responses[i - this.n] || {pos: false, col: false, posMs: 0, colMs: 0};
+      if (this.posMatch[i]) {
+        if (r.pos) { hits++; totalHitMs += (r.posMs || this.displayMs); if (r.posMs < fastestHit) fastestHit = r.posMs; }
+        else misses++;
+      } else {
+        if (r.pos) fa++; else cr++;
+      }
+      if (this.colMatch[i]) {
+        if (r.col) { hits++; totalHitMs += (r.colMs || this.displayMs); if (r.colMs < fastestHit) fastestHit = r.colMs; }
+        else misses++;
+      } else {
+        if (r.col) fa++; else cr++;
+      }
     }
-    const total = hits + misses + fa + cr;
 
-    // Weighted raw score
+    // Average reaction time for correct answers
+    const avgMs = hits > 0 ? totalHitMs / hits : this.displayMs;
+
+    // Speed bonus: faster = more points per hit
+    // Normalize against display window: ratio 0 = instant, 1 = at the buzzer
+    const speedRatio = avgMs / this.displayMs;
+    let speedBonus;
+    if (speedRatio < 0.25)      speedBonus = 50;   // blazing fast
+    else if (speedRatio < 0.40) speedBonus = 35;
+    else if (speedRatio < 0.55) speedBonus = 20;
+    else if (speedRatio < 0.75) speedBonus = 10;
+    else                        speedBonus = 0;    // slow or timed out
+
+    // Base score from accuracy
     const HIT_W = 100, MISS_W = -150, FA_W = -75, CR_W = 25;
     let raw = hits * HIT_W + misses * MISS_W + fa * FA_W + cr * CR_W;
+
+    // Add speed component: hits × speedBonus scales significantly
+    raw += hits * speedBonus;
 
     // Difficulty multipliers
     const nMult = [1, 1.0, 1.5, 2.0, 3.0][this.n] || 1.0;
@@ -1173,7 +1200,8 @@ const NBack = {
     raw = Math.round(raw * nMult * gridMult);
 
     // Normalize to 0–1000
-    const maxRaw = (total * HIT_W) * nMult * gridMult;
+    const total = hits + misses + fa + cr;
+    const maxRaw = (total * (HIT_W + 50)) * nMult * gridMult;  // 50 is max speed bonus
     const minRaw = (total * MISS_W) * nMult * gridMult;
     let score = 0;
     if (maxRaw > minRaw) {
@@ -1190,7 +1218,7 @@ const NBack = {
     else if (score >= 150) { grade = 'D'; gradeColor = '#ff8c42'; }
     else                   { grade = 'F'; gradeColor = '#f7545c'; }
 
-    return { hits, misses, fa, cr, total, raw, score, grade, gradeColor, nMult, gridMult };
+    return { hits, misses, fa, cr, total, raw, score, grade, gradeColor, nMult, gridMult, avgMs, fastestHit };
   },
 
   _updateScore() {
@@ -1217,7 +1245,7 @@ const NBack = {
 
     const s = this._calcScore();
     const isNew = Storage.setBest('nback', s.score);
-    Leaderboard.upload('nback_' + (this.mode === 'hell' ? 'hell' : this.n), { score: s.score, detail: s.grade + ' · ' + s.hits + ' hits' });
+    Leaderboard.upload('nback_' + (this.mode === 'hell' ? 'hell' : this.n), { score: s.score, detail: s.grade + ' · ' + s.hits + '/' + s.total + ' · ' + Math.round(s.avgMs) + 'ms' });
 
     // Badge text
     const badges = {S:'🏆 Outstanding', A:'🌟 Excellent', B:'👍 Good', C:'📋 Average', D:'💪 Below Avg', F:'📚 Practice'};
@@ -1234,7 +1262,8 @@ const NBack = {
         Mode: <b>${modeLabel}</b> &nbsp;|&nbsp;
         Hits: <b>${s.hits}</b> &nbsp; Miss: <b>${s.misses}</b> &nbsp;
         FA: <b>${s.fa}</b> &nbsp; CR: <b>${s.cr}</b><br>
-        Score: raw <b>${s.raw > 0 ? '+' : ''}${s.raw}</b>
+        Avg Speed: <b>${Math.round(s.avgMs)}ms</b> &nbsp; Fastest: <b>${s.fastestHit < Infinity ? Math.round(s.fastestHit) + 'ms' : '--'}</b><br>
+        Raw: <b>${s.raw > 0 ? '+' : ''}${s.raw}</b>
         × N${s.nMult} × G${s.gridMult}
         → <b>${s.score}</b> / 1000
       </div>
@@ -1556,7 +1585,12 @@ const NBack = {
 
     this.respondedThisTrial[type] = true;
     const respIdx = this.responses.length - 1;
-    if (respIdx >= 0) this.responses[respIdx][type] = true;
+    const respMs = performance.now() - this.trialStartTime;
+    if (respIdx >= 0) {
+      this.responses[respIdx][type] = true;
+      if (type === 'pos') this.responses[respIdx].posMs = respMs;
+      else this.responses[respIdx].colMs = respMs;
+    }
 
     if (actual) {
       // ✅ Correct
