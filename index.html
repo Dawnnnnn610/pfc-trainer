@@ -770,9 +770,9 @@ const NBack = {
     const overlay = document.createElement('div');
     overlay.className = 'nback-miss-overlay';
     let label = '';
-    if (missedPos && missedCol) label = '漏！位置+颜色';
-    else if (missedPos) label = '漏！位置';
-    else if (missedCol) label = '漏！颜色';
+    if (missedPos && missedCol) label = 'POSITION MISS + COLOR MISS';
+    else if (missedPos) label = 'POSITION MISS';
+    else if (missedCol) label = 'COLOR MISS';
     overlay.textContent = label;
     wrap.appendChild(overlay);
     setTimeout(() => overlay.remove(), 600);
@@ -830,9 +830,9 @@ const NBack = {
       <div class="big-score">${pct}%</div>
       ${isNew ? '<div class="new-best">🎉 新纪录！</div>' : ''}
       <div class="details">
-        命中: <b>${hits}</b> &nbsp; 漏报: <b>${misses}</b> &nbsp;
-        虚报: <b>${fa}</b> &nbsp; 正确拒绝: <b>${cr}</b><br>
-        难度: <b>${this.n}-Back</b>
+        Hits: <b>${hits}</b> &nbsp; Miss: <b>${misses}</b> &nbsp;
+        False Alarm: <b>${fa}</b> &nbsp; Correct Rejection: <b>${cr}</b><br>
+        Level: <b>${this.n}-Back</b>
       </div>
       <button class="btn" onclick="App.startNBack(NBack.n)">再来一局</button>
       <button class="btn outline sm" style="margin-left:8px" onclick="App.showNBackMenu()">返回菜单</button>
@@ -1004,9 +1004,9 @@ const NBack = {
             const wrap = document.getElementById('nb-grid-wrap');
             const ov = document.createElement('div');
             ov.className = 'nback-miss-overlay';
-            if (mp && mc) ov.textContent = '漏！位置+颜色';
-            else if (mp) ov.textContent = '漏！位置';
-            else ov.textContent = '漏！颜色';
+            if (mp && mc) ov.textContent = 'POSITION MISS + COLOR MISS';
+            else if (mp) ov.textContent = 'POSITION MISS';
+            else ov.textContent = 'COLOR MISS';
             wrap.appendChild(ov);
             NBack._schedule(() => ov.remove(), 600);
             this._markWrong();
@@ -1040,9 +1040,9 @@ const NBack = {
 
       const fb = document.getElementById('nb-guide');
       if (actual) {
-        fb.innerHTML += '<div style="color:var(--green);margin-top:6px">✅ ' + (type === 'pos' ? '位置' : '颜色') + '匹配 — 正确！</div>';
+        fb.innerHTML += '<div style="color:var(--green);margin-top:6px">✅ ' + (type === 'pos' ? 'Position' : 'Color') + ' Match!</div>';
       } else {
-        fb.innerHTML += '<div style="color:var(--red);margin-top:6px">❌ 没有' + (type === 'pos' ? '位置' : '颜色') + '匹配 — 虚报！</div>';
+        fb.innerHTML += '<div style="color:var(--red);margin-top:6px">' + (type === 'pos' ? 'POSITION FALSE ALARM' : 'COLOR FALSE ALARM') + '</div>';
         this._markWrong();
       }
 
@@ -1069,7 +1069,7 @@ const NBack = {
     _markCorrect() {
       const fb = document.getElementById('nb-guide');
       if (!fb.innerHTML.includes('正确')) {
-        fb.innerHTML += '<div style="color:var(--green);margin-top:6px">✅ 正确！</div>';
+        fb.innerHTML += '<div style="color:var(--green);margin-top:6px">✅ Correct!</div>';
       }
     },
 
@@ -1170,7 +1170,7 @@ const NBack = {
       const wrap = document.getElementById('nb-grid-wrap');
       const ov = document.createElement('div');
       ov.className = 'nback-miss-overlay';
-      ov.textContent = type === 'pos' ? '❌ 位置虚报' : '❌ 颜色虚报';
+      ov.textContent = type === 'pos' ? 'POSITION FALSE ALARM' : 'COLOR FALSE ALARM';
       wrap.appendChild(ov);
       setTimeout(() => ov.remove(), 600);
     }
@@ -1320,8 +1320,8 @@ const Stroop = {
       <div class="big-score">${this.score}</div>
       ${isNew ? '<div class="new-best">🎉 新纪录！</div>' : ''}
       <div class="details">
-        正确: <b>${this.correct}</b> &nbsp; 错误: <b>${this.incorrect}</b> &nbsp;
-        最大连击: <b>${this.maxCombo}</b> &nbsp; 准确率: <b>${this.correct+this.incorrect > 0 ? Math.round(this.correct/(this.correct+this.incorrect)*100) : 0}%</b>
+        Correct: <b>${this.correct}</b> &nbsp; Wrong: <b>${this.incorrect}</b> &nbsp;
+        Max Combo: <b>${this.maxCombo}</b> &nbsp; Accuracy: <b>${this.correct+this.incorrect > 0 ? Math.round(this.correct/(this.correct+this.incorrect)*100) : 0}%</b>
       </div>
       <button class="btn" onclick="Stroop.start()">再来一局</button>
       <button class="btn outline sm" style="margin-left:8px" onclick="App.showDashboard()">返回主页</button>
