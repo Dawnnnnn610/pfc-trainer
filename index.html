@@ -293,6 +293,15 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
 .vocab-opt.wrong { background: var(--red); border-color: var(--red); color: #fff; }
 .vocab-opt.full-width { grid-column: 1 / -1; }
 .vocab-opt.dunno { border-style: dashed; opacity: .7; }
+.vocab-timer-bar {
+  width: min(440px, 90vw); height: 4px; background: rgba(255,255,255,.08);
+  border-radius: 2px; margin: 0 auto 12px; overflow: hidden;
+}
+.vocab-timer-bar .fill {
+  height: 100%; background: var(--accent); border-radius: 2px;
+  transition: width .1s linear;
+}
+.vocab-timer-bar .fill.urgent { background: var(--red); }
 
 /* ===== Responsive ===== */
 @media (max-width: 500px) {
@@ -518,6 +527,7 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
   </div>
   <div class="game-body">
     <div class="instructions">选择单词的<strong>正确中文释义</strong></div>
+    <div class="vocab-timer-bar" id="vc-timer-bar"><div class="fill" id="vc-timer-fill"></div></div>
     <div class="vocab-word" id="vc-word"></div>
     <div class="vocab-options" id="vc-options"></div>
     <button class="btn outline" id="vc-stop" style="margin-top:12px">📊 结束测试看结果</button>
@@ -1021,6 +1031,7 @@ const VocabTest = {
   totalTried: 0, totalCorrect: 0,
   running: false,
   lastWord: null,
+  _timer: null,     // 7s countdown
 
   init() {
     this.ranked = [...WORD_BANK].sort((a,b) => a.r - b.r);
@@ -1078,6 +1089,9 @@ const VocabTest = {
 
   nextQuestion() {
     if (!this.running) return;
+    // Clear previous timer
+    if (this._timer) { clearTimeout(this._timer); this._timer = null; }
+
     // Binary search: pick word at midpoint of floor-ceiling range
     const midRank = Math.round((this.floor + this.ceiling) / 2);
     const word = this._getWord(midRank);
@@ -1085,25 +1099,53 @@ const VocabTest = {
 
     // Build 6 options
     const correctM = word.m;
-    // Decide: sometimes "none correct" is the answer (~15% of time)
     const useNoneCorrect = Math.random() < 0.15;
     const confusables = this._getConfusableMeanings(word, useNoneCorrect ? 4 : 3);
 
-    // Shuffle options
     let options = [];
     if (useNoneCorrect) {
       options = [...confusables, '以上都不正确', '我不知道'];
     } else {
       options = [correctM, ...confusables, '以上都不正确', '我不知道'];
     }
-    // Fisher-Yates shuffle first 4 options only (keep last 2 fixed)
     const prefix = options.slice(0, 4);
     for (let i = prefix.length-1; i>0; i--) { const j=Math.floor(Math.random()*(i+1)); [prefix[i],prefix[j]]=[prefix[j],prefix[i]]; }
     options = [...prefix, options[4], options[5]];
 
-    // Render
+    // Render word
     document.getElementById('vc-word').textContent = word.w;
 
+    // Timer bar: 7s countdown
+    const bar = document.getElementById('vc-timer-fill');
+    bar.style.transition = 'none'; bar.style.width = '100%'; bar.classList.remove('urgent');
+    void bar.offsetWidth;
+    bar.style.transition = 'width 7s linear';
+    bar.style.width = '0%';
+    setTimeout(() => { if (this.running && !document.getElementById('vc-results').style.display.includes('block')) bar.classList.add('urgent'); }, 4200);
+
+    // Auto-fail after 7s
+    this._timer = setTimeout(() => {
+      if (!this.running) return;
+      // Timeout: treat as wrong
+      this.totalTried++;
+      this.ceiling = Math.min(this.ceiling, word.r - 1);
+      // Highlight correct answer
+      const opts = Array.from(document.getElementById('vc-options').children);
+      const first4 = opts.slice(0, 4).map(o => o.textContent);
+      const isNoneCorrectMode = !first4.includes(correctM);
+      const correctIdx = first4.indexOf(correctM);
+      if (correctIdx >= 0) opts[correctIdx].classList.add('correct');
+      else if (isNoneCorrectMode) opts[4].classList.add('correct');
+
+      const estimate = Math.round((this.floor + this.ceiling) / 2);
+      document.getElementById('vc-estimate').textContent = this.totalTried < 5 ? '...评估中...' : estimate.toLocaleString() + ' (' + this._toLevel(estimate) + ')';
+      document.getElementById('vc-level').textContent = this.totalTried < 5 ? '--' : this._toLevel(estimate);
+      document.getElementById('vc-correct').textContent = this.totalCorrect + '/' + this.totalTried;
+
+      this._timer = setTimeout(() => this.nextQuestion(), 700);
+    }, 7000);
+
+    // Render options
     const optsEl = document.getElementById('vc-options');
     optsEl.innerHTML = '';
     options.forEach((opt, idx) => {
@@ -1118,11 +1160,13 @@ const VocabTest = {
 
   answer(word, chosen, correctM, btn) {
     if (!this.running) return;
+    // Kill the auto-fail timer and timer bar
+    if (this._timer) { clearTimeout(this._timer); this._timer = null; }
+    const bar = document.getElementById('vc-timer-fill');
+    bar.style.transition = 'none'; bar.style.width = '100%'; bar.classList.remove('urgent');
+
     this.totalTried++;
 
-    const isCorrect = (chosen === correctM) || (chosen === '以上都不正确' && chosen !== correctM);
-    // Actually: "none correct" correct when correctM is NOT among first 4 options
-    // We know it was useNoneCorrect mode if correctM not in first 4 rendered
     const options = Array.from(document.getElementById('vc-options').children);
     const first4 = options.slice(0, 4).map(o => o.textContent);
     const isNoneCorrectMode = !first4.includes(correctM);
@@ -1130,37 +1174,25 @@ const VocabTest = {
 
     if (actuallyCorrect) {
       this.totalCorrect++;
-      // Expand floor: they know words at least this hard
       this.floor = Math.max(this.floor, word.r);
     } else {
-      // Shrink ceiling: they don't know words this hard
       this.ceiling = Math.min(this.ceiling, word.r - 1);
-      // Flash correct answer
       const correctIdx = first4.indexOf(correctM);
-      if (correctIdx >= 0) {
-        options[correctIdx].classList.add('correct');
-      } else if (isNoneCorrectMode) {
-        // Highlight "none correct" option (idx 4)
-        options[4].classList.add('correct');
-      }
+      if (correctIdx >= 0) options[correctIdx].classList.add('correct');
+      else if (isNoneCorrectMode) options[4].classList.add('correct');
     }
 
-    // Mark chosen button
     if (chosen !== '我不知道') {
       btn.classList.add(actuallyCorrect ? 'correct' : 'wrong');
     }
 
-    // Update estimate display
     const estimate = Math.round((this.floor + this.ceiling) / 2);
-    const display = this.totalTried < 5
-      ? '...评估中...'
-      : estimate.toLocaleString() + ' (' + this._toLevel(estimate) + ')';
-    document.getElementById('vc-estimate').textContent = display;
+    document.getElementById('vc-estimate').textContent = this.totalTried < 5 ? '...评估中...' : estimate.toLocaleString() + ' (' + this._toLevel(estimate) + ')';
     document.getElementById('vc-level').textContent = this.totalTried < 5 ? '--' : this._toLevel(estimate);
     document.getElementById('vc-correct').textContent = this.totalCorrect + '/' + this.totalTried;
 
-    // Next question after delay
-    setTimeout(() => this.nextQuestion(), 600);
+    // Next question after brief pause for feedback
+    this._timer = setTimeout(() => this.nextQuestion(), 600);
   },
 
   _toLevel(est) {
@@ -1174,6 +1206,9 @@ const VocabTest = {
 
   stop() {
     this.running = false;
+    if (this._timer) { clearTimeout(this._timer); this._timer = null; }
+    document.getElementById('vc-timer-fill').style.width = '100%';
+    document.getElementById('vc-timer-fill').classList.remove('urgent');
     const est = Math.round((this.floor + this.ceiling) / 2);
     const level = this._toLevel(est);
     const acc = this.totalTried > 0 ? Math.round(this.totalCorrect / this.totalTried * 100) : 0;
