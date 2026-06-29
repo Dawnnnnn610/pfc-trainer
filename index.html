@@ -1031,13 +1031,14 @@ const VocabTest = {
   totalTried: 0, totalCorrect: 0,
   running: false,
   lastWord: null,
-  _timer: null,     // 7s countdown
+  seenWords: null,    // Set — never repeat a word
+  _timer: null,       // 5s countdown
 
   init() {
     this.ranked = [...WORD_BANK].sort((a,b) => a.r - b.r);
     this.floor = 50; this.ceiling = 40000;
     this.totalTried = 0; this.totalCorrect = 0;
-    this.running = true; this.lastWord = null;
+    this.running = true; this.lastWord = null; this.seenWords = new Set();
     document.getElementById('vc-estimate').textContent = '--';
     document.getElementById('vc-level').textContent = '--';
     document.getElementById('vc-correct').textContent = '0/0';
@@ -1047,43 +1048,61 @@ const VocabTest = {
   },
 
   _getWord(targetRank) {
-    // Find word closest to targetRank that wasn't just shown
-    let best = this.ranked[0];
-    let bestDist = Infinity;
+    // Find word closest to targetRank, never repeating a word or the previous word
+    let best = null, bestDist = Infinity;
     for (const w of this.ranked) {
+      if (this.seenWords.has(w.w) || w === this.lastWord) continue;
       const d = Math.abs(w.r - targetRank);
-      if (d < bestDist && w !== this.lastWord) { bestDist = d; best = w; }
+      if (d < bestDist) { bestDist = d; best = w; }
     }
+    // Fallback: if all are seen (shouldn't happen with 200+ words), just exclude last
+    if (!best) {
+      for (const w of this.ranked) {
+        if (w === this.lastWord) continue;
+        const d = Math.abs(w.r - targetRank);
+        if (d < bestDist) { bestDist = d; best = w; }
+      }
+    }
+    if (!best) best = this.ranked[Math.floor(Math.random() * this.ranked.length)];
+    this.seenWords.add(best.w);
     this.lastWord = best;
     return best;
   },
 
   _getConfusableMeanings(word, count) {
-    // Get meanings of confusable words for wrong options
     const results = [];
     const used = new Set;
     used.add(word.m);
+
+    // 1. From this word's own confusable list
     for (const cw of word.c || []) {
       const match = this.ranked.find(w => w.w === cw);
       if (match && match.m !== word.m && !used.has(match.m)) {
-        results.push(match.m);
-        used.add(match.m);
+        results.push(match.m); used.add(match.m);
       }
       if (results.length >= count) break;
     }
-    // If not enough from confusables, pick random meanings from nearby rank words
+
+    // 2. If still short, use synonyms-like approach: words with shared prefix/root from anywhere in bank
     if (results.length < count) {
-      const nearby = this.ranked.filter(w => Math.abs(w.r - word.r) < 5000 && w !== word && !used.has(w.m));
-      for (const nw of nearby) {
+      const prefix = word.w.slice(0, 3).toLowerCase();
+      const candidates = this.ranked.filter(w =>
+        w.w !== word.w && w.w.toLowerCase().startsWith(prefix) && !used.has(w.m)
+      );
+      for (const c of candidates) {
         if (results.length >= count) break;
-        if (!used.has(nw.m)) { results.push(nw.m); used.add(nw.m); }
+        if (!used.has(c.m)) { results.push(c.m); used.add(c.m); }
       }
     }
-    // Fill remaining from word bank
+
+    // 3. Last resort: fabricated distractors that are NOT real meanings from the word bank
+    // (prevents recycling correct meanings of other words as wrong options)
+    const fakePool = ['快速移动','缓慢下降','突然出现','大声说话','安静思考','逐渐消失','猛烈攻击','温柔对待','坚定拒绝','勉强接受','秘密调查','公开声明','完美呈现','粗糙制作','精确计算','随意安排'];
     while (results.length < count) {
-      const rw = this.ranked[Math.floor(Math.random() * this.ranked.length)];
-      if (!used.has(rw.m)) { results.push(rw.m); used.add(rw.m); }
+      const f = fakePool[Math.floor(Math.random() * fakePool.length)];
+      if (!used.has(f)) { results.push(f); used.add(f); }
     }
+
     return results;
   },
 
@@ -1119,17 +1138,15 @@ const VocabTest = {
     const bar = document.getElementById('vc-timer-fill');
     bar.style.transition = 'none'; bar.style.width = '100%'; bar.classList.remove('urgent');
     void bar.offsetWidth;
-    bar.style.transition = 'width 7s linear';
+    bar.style.transition = 'width 5s linear';
     bar.style.width = '0%';
-    setTimeout(() => { if (this.running && !document.getElementById('vc-results').style.display.includes('block')) bar.classList.add('urgent'); }, 4200);
+    setTimeout(() => { if (this.running && !document.getElementById('vc-results').style.display.includes('block')) bar.classList.add('urgent'); }, 3000);
 
-    // Auto-fail after 7s
+    // Auto-fail after 5s
     this._timer = setTimeout(() => {
       if (!this.running) return;
-      // Timeout: treat as wrong
       this.totalTried++;
       this.ceiling = Math.min(this.ceiling, word.r - 1);
-      // Highlight correct answer
       const opts = Array.from(document.getElementById('vc-options').children);
       const first4 = opts.slice(0, 4).map(o => o.textContent);
       const isNoneCorrectMode = !first4.includes(correctM);
@@ -1142,8 +1159,8 @@ const VocabTest = {
       document.getElementById('vc-level').textContent = this.totalTried < 5 ? '--' : this._toLevel(estimate);
       document.getElementById('vc-correct').textContent = this.totalCorrect + '/' + this.totalTried;
 
-      this._timer = setTimeout(() => this.nextQuestion(), 700);
-    }, 7000);
+      this._timer = setTimeout(() => this.nextQuestion(), 600);
+    }, 5000);
 
     // Render options
     const optsEl = document.getElementById('vc-options');
