@@ -1026,20 +1026,34 @@ const WORD_BANK = [
 
 // ===== Vocabulary Test =====
 const VocabTest = {
-  ranked: [],        // WORD_BANK sorted by r
-  floor: 50, ceiling: 40000,
+  ranked: [],
+  bands: [[],[],[],[],[]],  // 5 difficulty bands
+  currentBand: 2,          // start at band 3 (0-indexed)
+  bandCorrect: 0,
+  bandWrong: 0,
   totalTried: 0, totalCorrect: 0,
   running: false,
-  lastWord: null,
-  seenWords: null,    // Set — never repeat a word
-  _timer: null,       // 5s countdown
+  seenWords: null,
+  _timer: null,
 
   init() {
-    this.ranked = [...WORD_BANK].sort((a,b) => a.r - b.r);
-    this.floor = 50; this.ceiling = 40000;
+    // Group words into 5 bands by rank
+    const all = [...WORD_BANK];
+    this.bands = [[],[],[],[],[]];
+    for (const w of all) {
+      if (w.r < 500) this.bands[0].push(w);
+      else if (w.r < 5000) this.bands[1].push(w);
+      else if (w.r < 15000) this.bands[2].push(w);
+      else if (w.r < 30000) this.bands[3].push(w);
+      else this.bands[4].push(w);
+    }
+    // Shuffle each band
+    for (const b of this.bands) { for (let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];} }
+
+    this.currentBand = 2; this.bandCorrect = 0; this.bandWrong = 0;
     this.totalTried = 0; this.totalCorrect = 0;
-    this.running = true; this.lastWord = null; this.seenWords = new Set();
-    document.getElementById('vc-estimate').textContent = '--';
+    this.running = true; this.seenWords = new Set();
+    document.getElementById('vc-estimate').textContent = '...评估中...';
     document.getElementById('vc-level').textContent = '--';
     document.getElementById('vc-correct').textContent = '0/0';
     document.getElementById('vc-results').style.display = 'none';
@@ -1047,118 +1061,83 @@ const VocabTest = {
     this.nextQuestion();
   },
 
-  _getWord(targetRank) {
-    // Find word closest to targetRank, never repeating a word or the previous word
-    let best = null, bestDist = Infinity;
-    for (const w of this.ranked) {
-      if (this.seenWords.has(w.w) || w === this.lastWord) continue;
-      const d = Math.abs(w.r - targetRank);
-      if (d < bestDist) { bestDist = d; best = w; }
+  _pickWord() {
+    // Pick an unseen word from current band, reshuffle if exhausted
+    let pool = this.bands[this.currentBand].filter(w => !this.seenWords.has(w.w));
+    if (pool.length === 0) {
+      // Reshuffle current band: clear seenWords for this band
+      for (const w of this.bands[this.currentBand]) this.seenWords.delete(w.w);
+      pool = [...this.bands[this.currentBand]];
+      for (let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
     }
-    // Fallback: if all are seen (shouldn't happen with 200+ words), just exclude last
-    if (!best) {
-      for (const w of this.ranked) {
-        if (w === this.lastWord) continue;
-        const d = Math.abs(w.r - targetRank);
-        if (d < bestDist) { bestDist = d; best = w; }
-      }
-    }
-    if (!best) best = this.ranked[Math.floor(Math.random() * this.ranked.length)];
-    this.seenWords.add(best.w);
-    this.lastWord = best;
-    return best;
+    return pool[Math.floor(Math.random() * pool.length)];
   },
 
   _getConfusableMeanings(word, count) {
-    const results = [];
-    const used = new Set;
-    used.add(word.m);
-
-    // 1. From this word's own confusable list
+    const results = []; const used = new Set; used.add(word.m);
+    // From word's own confusable list
     for (const cw of word.c || []) {
-      const match = this.ranked.find(w => w.w === cw);
-      if (match && match.m !== word.m && !used.has(match.m)) {
-        results.push(match.m); used.add(match.m);
-      }
+      const match = this.bands.flat().find(w => w.w === cw);
+      if (match && match.m !== word.m && !used.has(match.m)) { results.push(match.m); used.add(match.m); }
       if (results.length >= count) break;
     }
-
-    // 2. If still short, use synonyms-like approach: words with shared prefix/root from anywhere in bank
+    // Same-prefix words
     if (results.length < count) {
       const prefix = word.w.slice(0, 3).toLowerCase();
-      const candidates = this.ranked.filter(w =>
-        w.w !== word.w && w.w.toLowerCase().startsWith(prefix) && !used.has(w.m)
-      );
-      for (const c of candidates) {
+      for (const w of this.bands.flat()) {
+        if (w.w === word.w || used.has(w.m)) continue;
+        if (w.w.toLowerCase().startsWith(prefix)) { results.push(w.m); used.add(w.m); }
         if (results.length >= count) break;
-        if (!used.has(c.m)) { results.push(c.m); used.add(c.m); }
       }
     }
-
-    // 3. Last resort: fabricated distractors that are NOT real meanings from the word bank
-    // (prevents recycling correct meanings of other words as wrong options)
+    // Fake distractors — NOT real word meanings
     const fakePool = ['快速移动','缓慢下降','突然出现','大声说话','安静思考','逐渐消失','猛烈攻击','温柔对待','坚定拒绝','勉强接受','秘密调查','公开声明','完美呈现','粗糙制作','精确计算','随意安排'];
     while (results.length < count) {
       const f = fakePool[Math.floor(Math.random() * fakePool.length)];
       if (!used.has(f)) { results.push(f); used.add(f); }
     }
-
     return results;
   },
 
   nextQuestion() {
     if (!this.running) return;
-    // Clear previous timer
     if (this._timer) { clearTimeout(this._timer); this._timer = null; }
 
-    // Binary search: pick word at midpoint of floor-ceiling range
-    const midRank = Math.round((this.floor + this.ceiling) / 2);
-    const word = this._getWord(midRank);
+    const word = this._pickWord();
     if (!word) return;
+    this.seenWords.add(word.w);
 
-    // Build 6 options
     const correctM = word.m;
-    const useNoneCorrect = Math.random() < 0.15;
+    const useNoneCorrect = Math.random() < 0.12;
     const confusables = this._getConfusableMeanings(word, useNoneCorrect ? 4 : 3);
 
-    let options = [];
-    if (useNoneCorrect) {
-      options = [...confusables, '以上都不正确', '我不知道'];
-    } else {
-      options = [correctM, ...confusables, '以上都不正确', '我不知道'];
-    }
+    let options = useNoneCorrect
+      ? [...confusables, '以上都不正确', '我不知道']
+      : [correctM, ...confusables, '以上都不正确', '我不知道'];
     const prefix = options.slice(0, 4);
-    for (let i = prefix.length-1; i>0; i--) { const j=Math.floor(Math.random()*(i+1)); [prefix[i],prefix[j]]=[prefix[j],prefix[i]]; }
+    for (let i=prefix.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[prefix[i],prefix[j]]=[prefix[j],prefix[i]];}
     options = [...prefix, options[4], options[5]];
 
-    // Render word
     document.getElementById('vc-word').textContent = word.w;
 
-    // Timer bar: 7s countdown
+    // Timer bar 5s
     const bar = document.getElementById('vc-timer-fill');
     bar.style.transition = 'none'; bar.style.width = '100%'; bar.classList.remove('urgent');
     void bar.offsetWidth;
-    bar.style.transition = 'width 5s linear';
-    bar.style.width = '0%';
+    bar.style.transition = 'width 5s linear'; bar.style.width = '0%';
     setTimeout(() => { if (this.running && !document.getElementById('vc-results').style.display.includes('block')) bar.classList.add('urgent'); }, 3000);
 
-    // Auto-fail after 5s
+    // Auto-fail at 5s
     this._timer = setTimeout(() => {
       if (!this.running) return;
-      this.totalTried++;
-      this.ceiling = Math.min(this.ceiling, word.r - 1);
+      this.totalTried++; this.bandWrong++;
+      if (this.bandWrong >= 3) { this.currentBand = Math.max(0, this.currentBand - 1); this.bandWrong = 0; this.bandCorrect = 0; }
       const opts = Array.from(document.getElementById('vc-options').children);
-      const first4 = opts.slice(0, 4).map(o => o.textContent);
+      const first4 = opts.slice(0,4).map(o=>o.textContent);
       const isNoneCorrectMode = !first4.includes(correctM);
-      const correctIdx = first4.indexOf(correctM);
-      if (correctIdx >= 0) opts[correctIdx].classList.add('correct');
-      else if (isNoneCorrectMode) opts[4].classList.add('correct');
-
-      const estimate = Math.round((this.floor + this.ceiling) / 2);
-      document.getElementById('vc-estimate').textContent = this.totalTried < 5 ? '...评估中...' : estimate.toLocaleString() + ' (' + this._toLevel(estimate) + ')';
-      document.getElementById('vc-level').textContent = this.totalTried < 5 ? '--' : this._toLevel(estimate);
-      document.getElementById('vc-correct').textContent = this.totalCorrect + '/' + this.totalTried;
-
+      if (!isNoneCorrectMode) { const ci=first4.indexOf(correctM); if(ci>=0)opts[ci].classList.add('correct'); }
+      else opts[4].classList.add('correct');
+      this._updateDisplay();
       this._timer = setTimeout(() => this.nextQuestion(), 600);
     }, 5000);
 
@@ -1177,89 +1156,87 @@ const VocabTest = {
 
   answer(word, chosen, correctM, btn) {
     if (!this.running) return;
-    // Kill the auto-fail timer and timer bar
     if (this._timer) { clearTimeout(this._timer); this._timer = null; }
     const bar = document.getElementById('vc-timer-fill');
     bar.style.transition = 'none'; bar.style.width = '100%'; bar.classList.remove('urgent');
 
     this.totalTried++;
-
     const options = Array.from(document.getElementById('vc-options').children);
-    const first4 = options.slice(0, 4).map(o => o.textContent);
+    const first4 = options.slice(0,4).map(o=>o.textContent);
     const isNoneCorrectMode = !first4.includes(correctM);
     const actuallyCorrect = (chosen === correctM) || (chosen === '以上都不正确' && isNoneCorrectMode);
 
     if (actuallyCorrect) {
-      this.totalCorrect++;
-      this.floor = Math.max(this.floor, word.r);
+      this.totalCorrect++; this.bandCorrect++; this.bandWrong = 0;
+      // Advance band after 3 consecutive correct
+      if (this.bandCorrect >= 3 && this.currentBand < 4) {
+        this.currentBand++; this.bandCorrect = 0; this.bandWrong = 0;
+      }
     } else {
-      this.ceiling = Math.min(this.ceiling, word.r - 1);
-      const correctIdx = first4.indexOf(correctM);
-      if (correctIdx >= 0) options[correctIdx].classList.add('correct');
+      this.bandWrong++; this.bandCorrect = 0;
+      // Regress band after 3 wrong in short span
+      if (this.bandWrong >= 3) { this.currentBand = Math.max(0, this.currentBand - 1); this.bandWrong = 0; }
+      const ci = first4.indexOf(correctM);
+      if (ci >= 0) options[ci].classList.add('correct');
       else if (isNoneCorrectMode) options[4].classList.add('correct');
     }
+    if (chosen !== '我不知道') btn.classList.add(actuallyCorrect?'correct':'wrong');
 
-    if (chosen !== '我不知道') {
-      btn.classList.add(actuallyCorrect ? 'correct' : 'wrong');
-    }
-
-    const estimate = Math.round((this.floor + this.ceiling) / 2);
-    document.getElementById('vc-estimate').textContent = this.totalTried < 5 ? '...评估中...' : estimate.toLocaleString() + ' (' + this._toLevel(estimate) + ')';
-    document.getElementById('vc-level').textContent = this.totalTried < 5 ? '--' : this._toLevel(estimate);
-    document.getElementById('vc-correct').textContent = this.totalCorrect + '/' + this.totalTried;
-
-    // Next question after brief pause for feedback
+    this._updateDisplay();
     this._timer = setTimeout(() => this.nextQuestion(), 600);
   },
 
-  _toLevel(est) {
-    if (est < 1500) return 'A1';
-    if (est < 3000) return 'A2';
-    if (est < 5000) return 'B1';
-    if (est < 9000) return 'B2';
-    if (est < 15000) return 'C1';
-    return 'C2';
+  _updateDisplay() {
+    const bandNames = ['A1','A2','B1','B2','C1'];
+    const bandSizes = ['0-500','500-5k','5k-15k','15k-30k','30k+'];
+    const level = bandNames[this.currentBand];
+    document.getElementById('vc-estimate').textContent = this.totalTried < 4
+      ? '...评估中...'
+      : bandSizes[this.currentBand] + ' (' + level + ')';
+    document.getElementById('vc-level').textContent = this.totalTried < 4 ? '--' : level;
+    document.getElementById('vc-correct').textContent = this.totalCorrect + '/' + this.totalTried;
   },
+
+  _toLevel(band) { return ['A1','A2','B1','B2','C1'][band] || 'C2'; },
 
   stop() {
     this.running = false;
     if (this._timer) { clearTimeout(this._timer); this._timer = null; }
     document.getElementById('vc-timer-fill').style.width = '100%';
     document.getElementById('vc-timer-fill').classList.remove('urgent');
-    const est = Math.round((this.floor + this.ceiling) / 2);
-    const level = this._toLevel(est);
-    const acc = this.totalTried > 0 ? Math.round(this.totalCorrect / this.totalTried * 100) : 0;
-    const isNew = Storage.setBest('vocab', est);
-    Leaderboard.upload('vocab', { score: est, detail: level + ' · ' + this.totalCorrect + '/' + this.totalTried });
 
-    document.getElementById('vc-estimate').textContent = est.toLocaleString();
-    document.getElementById('vc-level').textContent = level;
+    const bandNames = ['A1','A2','B1','B2','C1'];
+    const bandSizes = ['0-500','500-5k','5k-15k','15k-30k','30k+'];
+    const level = bandNames[this.currentBand];
+    const vocabEst = bandSizes[this.currentBand];
+    const acc = this.totalTried>0?Math.round(this.totalCorrect/this.totalTried*100):0;
+
+    // Map to a numeric score for leaderboard
+    const bandScores = [1500,3500,8000,20000,35000];
+    const score = bandScores[this.currentBand];
+    const isNew = Storage.setBest('vocab', score);
+    Leaderboard.upload('vocab', {score, detail: level+' · '+this.totalCorrect+'/'+this.totalTried});
+
     document.getElementById('vc-word').textContent = '';
     document.getElementById('vc-options').innerHTML = '';
     document.getElementById('vc-stop').style.display = 'none';
 
-    const badges = {
-      'C2':'🏆 Native-like','C1':'🌟 Advanced','B2':'👍 Upper-Intermediate',
-      'B1':'📋 Intermediate','A2':'💪 Elementary','A1':'📚 Beginner'
-    };
-
+    const badges = {'C1':'🌟 Advanced','B2':'👍 Upper-Intermediate','B1':'📋 Intermediate','A2':'💪 Elementary','A1':'📚 Beginner'};
     document.getElementById('vc-results').style.display = 'block';
     document.getElementById('vc-results').innerHTML =
       `<h3>测试结果</h3>
-      <div class="big-score">${est.toLocaleString()}</div>
+      <div class="big-score">${vocabEst}</div>
       <div style="font-size:1.5rem;font-weight:700;margin-bottom:4px">${level} · ${badges[level]||''}</div>
-      ${isNew ? '<div class="new-best">🎉 新纪录！</div>' : ''}
+      ${isNew?'<div class="new-best">🎉 新纪录！</div>':''}
       <div class="details">
-        Range: <b>${this.floor.toLocaleString()}-${this.ceiling.toLocaleString()}</b> · Accuracy: <b>${acc}%</b><br>
+        Range: <b>${vocabEst}</b> · Accuracy: <b>${acc}%</b><br>
         Questions: <b>${this.totalTried}</b> · Correct: <b>${this.totalCorrect}</b>
       </div>
       <button class="btn" onclick="VocabTest.init()">重新测试</button>
       <button class="btn outline sm" style="margin-left:8px" onclick="App.showDashboard()">返回主页</button>`;
-
     App.updateBestDisplay();
   }
 };
-
 // ===== App Controller =====
 const App = {
   currentGame: null,
