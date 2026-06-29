@@ -323,7 +323,7 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
         <small>5×5 · 4-Back · 20题</small>
       </button>
     </div>
-    <p class="nback-footer">💬 dawn：通关魔鬼模式的玩家找dawn领一次</p>
+    <p class="nback-footer">💬 dawn：通关地狱模式的玩家找dawn领一次</p>
   </div>
 </section>
 
@@ -645,8 +645,14 @@ const NBack = {
     const grid = document.getElementById('nb-grid');
     grid.innerHTML = '';
     const total = this.gridSize * this.gridSize;
-    grid.classList.toggle('hell', this.gridSize === 5);
-    document.getElementById('nb-timer-bar').classList.toggle('hell', this.gridSize === 5);
+    // Explicit add/remove instead of toggle to avoid stale state
+    if (this.gridSize === 5) {
+      grid.classList.add('hell');
+      document.getElementById('nb-timer-bar').classList.add('hell');
+    } else {
+      grid.classList.remove('hell');
+      document.getElementById('nb-timer-bar').classList.remove('hell');
+    }
     for (let i = 0; i < total; i++) {
       const cell = document.createElement('div');
       cell.className = 'nback-cell';
