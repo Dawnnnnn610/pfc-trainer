@@ -281,20 +281,19 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
 }
 .vocab-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: min(440px, 90vw); }
 .vocab-opt {
-  padding: 12px 14px; border-radius: var(--radius-sm); border: 2px solid rgba(0,0,0,.06);
+  padding: 12px 14px; border-radius: var(--radius-sm); border: none;
   background: var(--surface2); color: var(--text); cursor: pointer;
   font-size: .9rem; transition: all .12s; text-align: center;
   user-select: none; min-height: 50px; display: flex; align-items: center; justify-content: center;
   line-height: 1.4; outline: none; -webkit-tap-highlight-color: transparent;
   -webkit-user-select: none; -webkit-touch-callout: none;
 }
-.vocab-opt:hover { border-color: var(--accent); }
-.vocab-opt:focus, .vocab-opt:focus-visible { border-color: rgba(0,0,0,.06) !important; outline: none !important; box-shadow: none !important; }
+.vocab-opt:hover { background: var(--surface); }
 .vocab-opt:active { transform: scale(.97); }
-.vocab-opt.correct { background: var(--green); border-color: var(--green); color: #000; }
-.vocab-opt.wrong { background: var(--red); border-color: var(--red); color: #fff; }
+.vocab-opt.correct { background: var(--green); color: #000; }
+.vocab-opt.wrong { background: var(--red); color: #fff; }
 .vocab-opt.full-width { grid-column: 1 / -1; }
-.vocab-opt.dunno { border-style: dashed; opacity: .7; }
+.vocab-opt.dunno { opacity: .7; }
 .vocab-timer-bar {
   width: min(440px, 90vw); height: 4px; background: rgba(0,0,0,.08);
   border-radius: 2px; margin: 0 auto 12px; overflow: hidden;
@@ -3711,7 +3710,7 @@ const VocabTest = {
   theta: 1000,         // player ability estimate
   totalTried: 0, totalCorrect: 0, totalTime: 0,
   running: false,
-  seenWords: null, recentSeen: [], currentWord: null,
+  seenWords: null,
   _timer: null, _trialStart: 0,
   K: 80,
   probeCount: 0,
@@ -3733,10 +3732,9 @@ const VocabTest = {
     }
     for (const b of this.buckets) { for (let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];} }
 
-    this.theta = 2000; this.K = 80;
+    this.theta = 500; this.K = 80;
     this.totalTried = 0; this.totalCorrect = 0; this.totalTime = 0;
     this.running = true; this.seenWords = new Set();
-    this.recentSeen = [];  // FIFO buffer, last 40 words blocked from reappearing
     this.probeCount = 0; this.streakCorrect = 0;
     document.getElementById('vc-estimate').textContent = '...评估中...';
     document.getElementById('vc-level').textContent = '--';
@@ -3759,11 +3757,10 @@ const VocabTest = {
     else if (roll < 0.85) { lo=Math.min(19,targetBucket+1); hi=Math.min(19,targetBucket+5); }
     else { lo=0; hi=19; }
 
-    const recentSet=new Set(this.recentSeen||[]);
-    let pool=[];
-    for(let b=lo;b<=hi;b++){for(const w of this.buckets[b]||[]){if(!this.seenWords.has(w.w)&&!recentSet.has(w.w))pool.push(w);}}
-    if(pool.length===0)pool=this.ranked.filter(w=>!this.seenWords.has(w.w)&&!recentSet.has(w.w));
-    if(pool.length===0){for(const w of this.ranked){this.seenWords.delete(w.w);recentSet.delete(w.w);}pool=this.ranked.filter(w=>!recentSet.has(w.w));}
+    let pool = [];
+    for (let b=lo; b<=hi; b++) { for (const w of this.buckets[b]||[]) { if (!this.seenWords.has(w.w)) pool.push(w); } }
+    if (pool.length===0) pool=this.ranked.filter(w=>!this.seenWords.has(w.w));
+    if (pool.length===0) { for (const w of this.ranked) this.seenWords.delete(w.w); pool=[...this.ranked]; }
     for(let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
     const pick=Math.min(30,pool.length);
     return pool[Math.floor(Math.random()*pick)];
@@ -3799,7 +3796,6 @@ const VocabTest = {
     if(!this.running)return;
     if(this._timer){clearTimeout(this._timer);this._timer=null;}
     const word=this._pickWord();if(!word)return;this.seenWords.add(word.w);
-    this.currentWord=word;
     const correctM=word.m;const useNoneCorrect=Math.random()<0.12;
     const confusables=this._getConfusableMeanings(word,useNoneCorrect?4:3);
     document.getElementById('vc-word').textContent=word.w;
@@ -3812,10 +3808,7 @@ const VocabTest = {
   _processAnswer(word, correct, ms, chosen) {
     this.totalTried++;this.totalTime+=ms;
     if(correct){this.totalCorrect++;this.streakCorrect++;}else{this.streakCorrect=0;}
-    // Push into recentSeen FIFO to avoid immediate repeats
-    const ww=this.currentWord?this.currentWord.w:word.w;
-    if(ww){this.recentSeen.push(ww);if(this.recentSeen.length>50)this.recentSeen.shift();}
-    const difficulty=this.wordScores.get(ww)||this.wordScores.get(word.w)||5000;
+    const difficulty=this.wordScores.get(word.w)||5000;
     const P=1/(1+Math.exp(-(this.theta-difficulty)/2000));
     let K=this.K/(1+this.totalTried*0.02);
     if(correct){if(ms<2000)K*=1.4;else if(ms<4000)K*=1.1;else K*=0.8;}else{if(ms>=6000)K*=1.2;}
