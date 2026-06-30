@@ -285,11 +285,11 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
   background: var(--surface2); color: var(--text); cursor: pointer;
   font-size: .9rem; transition: all .12s; text-align: center;
   user-select: none; min-height: 50px; display: flex; align-items: center; justify-content: center;
-  line-height: 1.4; outline: none;
+  line-height: 1.4; outline: none; -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none; -webkit-touch-callout: none;
 }
 .vocab-opt:hover { border-color: var(--accent); }
-.vocab-opt:focus { border-color: rgba(0,0,0,.06); box-shadow: none; }
-.vocab-opt:focus-visible { border-color: rgba(0,0,0,.06); outline: none; box-shadow: none; }
+.vocab-opt:focus, .vocab-opt:focus-visible { border-color: rgba(0,0,0,.06) !important; outline: none !important; box-shadow: none !important; }
 .vocab-opt:active { transform: scale(.97); }
 .vocab-opt.correct { background: var(--green); border-color: var(--green); color: #000; }
 .vocab-opt.wrong { background: var(--red); border-color: var(--red); color: #fff; }
@@ -3826,6 +3826,7 @@ const VocabTest = {
     const opts=Array.from(document.getElementById('vc-options').children);
     if(!actuallyCorrect&&chosen!=='我不知道')btn.classList.add('wrong');
     if(actuallyCorrect&&chosen!=='我不知道')btn.classList.add('correct');
+    btn.blur(); if(document.activeElement)document.activeElement.blur();
     if(!actuallyCorrect){const ci=useNoneCorrect?4:opts.slice(0,4).map(o=>o.textContent).indexOf(correctM);if(ci>=0)opts[ci].classList.add('correct');else if(useNoneCorrect)opts[4].classList.add('correct');}
     this._processAnswer({w:'',r:0},actuallyCorrect,ms,chosen);
   },
