@@ -3737,15 +3737,19 @@ const VocabTest = {
     this.buckets = [];
     for (let i=0; i<20; i++) this.buckets.push([]);
     for (const w of all) {
-      const b = Math.min(19, Math.max(0, Math.floor(Math.log2(w.r/100+1) / Math.log2(500) * 20)));
+      // Recalibrated: spread r=5000–50000 evenly over 20 buckets
+      const b = Math.min(19, Math.max(0, Math.floor(
+        (Math.log(w.r) - Math.log(5000)) / (Math.log(50000) - Math.log(5000)) * 19
+      )));
       this.buckets[b].push(w);
     }
     for (const b of this.buckets) { for (let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];} }
 
-    this.theta = 500; this.K = 80;
+    this.theta = 5000; this.K = 500;
     this.totalTried = 0; this.totalCorrect = 0; this.totalTime = 0;
     this.running = true; this.seenWords = new Set();
     this.probeCount = 0; this.streakCorrect = 0;
+    this.warmupPhase = true; this.warmupCount = 0;
     document.getElementById('vc-estimate').textContent = '...评估中...';
     document.getElementById('vc-level').textContent = '--';
     document.getElementById('vc-correct').textContent = '0/0';
@@ -3754,18 +3758,27 @@ const VocabTest = {
     this.nextQuestion();
   },
 
-  _getBucket(theta) { return Math.min(19, Math.max(0, Math.floor(Math.log2(theta/100+1) / Math.log2(500) * 20))); },
+  _getBucket(theta) { return Math.min(19, Math.max(0, Math.floor(
+    (Math.log(Math.max(5001,theta)) - Math.log(5000)) / (Math.log(50000) - Math.log(5000)) * 19
+  ))); },
 
   _pickWord() {
     const targetBucket = this._getBucket(this.theta);
-    // 65%: explore near ability
-    // 20%: probe higher
-    // 15%: wildcard across all
-    const roll = Math.random();
+    // Warmup (~8 questions): large strides to rapidly locate level
+    // After warmup: 55% near ability, 25% probe, 10% confirm, 10% wild
     let lo, hi;
-    if (roll < 0.65) { const j=Math.floor(Math.random()*7)-3; lo=Math.max(0,targetBucket+j-1); hi=Math.min(19,targetBucket+j+1); }
-    else if (roll < 0.85) { lo=Math.min(19,targetBucket+1); hi=Math.min(19,targetBucket+5); }
-    else { lo=0; hi=19; }
+    if (this.warmupCount < 8) {
+      const strides = [0, 8, -6, 12, -10, 15, -14, 18];
+      const offset = strides[this.warmupCount] || (this.warmupCount % 2 === 0 ? 10 : -8);
+      lo = Math.max(0, targetBucket + offset - 2);
+      hi = Math.min(19, targetBucket + offset + 2);
+    } else {
+      const roll = Math.random();
+      if (roll < 0.55) { const j=Math.floor(Math.random()*7)-3; lo=Math.max(0,targetBucket+j-1); hi=Math.min(19,targetBucket+j+1); }
+      else if (roll < 0.80) { lo=Math.min(19,targetBucket+1); hi=Math.min(19,targetBucket+4); }
+      else if (roll < 0.90) { lo=Math.max(0,targetBucket-4); hi=Math.max(0,targetBucket-1); }
+      else { lo=0; hi=19; }
+    }
 
     let pool = [];
     for (let b=lo; b<=hi; b++) { for (const w of this.buckets[b]||[]) { if (!this.seenWords.has(w.w)) pool.push(w); } }
@@ -3817,13 +3830,28 @@ const VocabTest = {
 
   _processAnswer(word, correct, ms, chosen) {
     this.totalTried++;this.totalTime+=ms;
+    if(this.warmupPhase){
+      this.warmupCount++;
+      if(this.warmupCount>=8)this.warmupPhase=false;
+    }
     if(correct){this.totalCorrect++;this.streakCorrect++;}else{this.streakCorrect=0;}
     const difficulty=this.wordScores.get(word.w)||5000;
-    const P=1/(1+Math.exp(-(this.theta-difficulty)/2000));
-    let K=this.K/(1+this.totalTried*0.02);
-    if(correct){if(ms<2000)K*=1.4;else if(ms<4000)K*=1.1;else K*=0.8;}else{if(ms>=6000)K*=1.2;}
+    // 1PL Rasch-like IRT: P(correct | theta, difficulty) = 1/(1+exp(-(theta-d)/scale))
+    const scale=1800;
+    const P=1/(1+Math.exp(-(this.theta-difficulty)/scale));
+    // Learning rate: large K during warmup, then decay gradually
+    let K=this.warmupPhase ? 600 : this.K/(1+this.totalTried*0.012);
+    // Speed bonus: fast correct answers get bigger boost, slow gets penalty
+    if(correct){
+      if(ms<1500)K*=1.5;
+      else if(ms<3000)K*=1.2;
+      else if(ms<4500)K*=1.0;
+      else K*=0.7;
+    }else{
+      if(ms>=6000)K*=1.3; // timeout → bigger penalty
+    }
     if(correct)this.theta+=K*(1-P);else this.theta-=K*P;
-    this.theta=Math.max(100,Math.min(50000,this.theta));
+    this.theta=Math.max(5000,Math.min(50000,this.theta));
     this._updateDisplay();this._timer=setTimeout(()=>this.nextQuestion(),900);
   },
 
@@ -3841,7 +3869,8 @@ const VocabTest = {
   },
 
   _updateDisplay() {
-    const vocabSize=Math.round(this.theta*3.5+500);
+    // Calibrated mapping: theta (~5000-50000) → vocab size (~3000-35000)
+    const vocabSize=Math.round(this.theta*0.55+3000);
     const level=vocabSize<1500?'A1':vocabSize<3000?'A2':vocabSize<6000?'B1':vocabSize<12000?'B2':vocabSize<20000?'C1':'C2';
     document.getElementById('vc-estimate').textContent=this.totalTried<3?'...评估中...':vocabSize.toLocaleString()+' ('+level+')';
     document.getElementById('vc-level').textContent=this.totalTried<3?'--':level;
@@ -3851,7 +3880,8 @@ const VocabTest = {
   stop() {
     this.running=false;if(this._timer){clearTimeout(this._timer);this._timer=null;}
     document.getElementById('vc-timer-fill').style.width='100%';document.getElementById('vc-timer-fill').classList.remove('urgent');
-    const vocabSize=Math.round(this.theta*3.5+500);
+    // Calibrated mapping: theta (~5000-50000) → vocab size (~3000-35000)
+    const vocabSize=Math.round(this.theta*0.55+3000);
     const level=vocabSize<1500?'A1':vocabSize<3000?'A2':vocabSize<6000?'B1':vocabSize<12000?'B2':vocabSize<20000?'C1':'C2';
     const acc=this.totalTried>0?Math.round(this.totalCorrect/this.totalTried*100):0;
     const avgMs=this.totalTried>0?Math.round(this.totalTime/this.totalTried):0;
