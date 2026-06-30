@@ -281,11 +281,11 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
 }
 .vocab-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: min(440px, 90vw); }
 .vocab-opt {
-  padding: 12px 14px; border-radius: var(--radius-sm); border: 2px solid rgba(0,0,0,.1);
+  padding: 12px 14px; border-radius: var(--radius-sm); border: 2px solid rgba(0,0,0,.06);
   background: var(--surface2); color: var(--text); cursor: pointer;
   font-size: .9rem; transition: all .12s; text-align: center;
   user-select: none; min-height: 50px; display: flex; align-items: center; justify-content: center;
-  line-height: 1.4;
+  line-height: 1.4; outline: none;
 }
 .vocab-opt:hover { border-color: var(--accent); }
 .vocab-opt:active { transform: scale(.97); }
