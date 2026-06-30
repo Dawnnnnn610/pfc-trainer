@@ -439,6 +439,7 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
     <div class="nback-response" id="nb-response">
       <div class="resp-btn" id="resp-pos">📍 位置匹配<span class="key">按键 A</span></div>
       <div class="resp-btn" id="resp-col">🎨 颜色匹配<span class="key">按键 L</span></div>
+      <div class="resp-btn" id="resp-neither" style="display:none">✓ 都没有<span class="key">按键 S</span></div>
     </div>
     <button class="btn" id="nb-start">开始训练</button>
     <button class="btn outline" id="nb-restart" style="display:none">🔄 重新开始</button>
@@ -4107,12 +4108,41 @@ const NBack = {
   _bindRespBtns() {
     const posBtn = document.getElementById('resp-pos');
     const colBtn = document.getElementById('resp-col');
+    const neitherBtn = document.getElementById('resp-neither');
     // Use pointerdown for instant mobile response + multi-touch support
     posBtn.onpointerdown = e => { e.preventDefault(); this.respond('pos'); };
     colBtn.onpointerdown = e => { e.preventDefault(); this.respond('col'); };
+    neitherBtn.onpointerdown = e => { e.preventDefault(); this._tutorialRespondNeither(); };
     // Fallback for desktop click
     posBtn.onclick = e => { e.preventDefault(); this.respond('pos'); };
     colBtn.onclick = e => { e.preventDefault(); this.respond('col'); };
+    neitherBtn.onclick = e => { e.preventDefault(); this._tutorialRespondNeither(); };
+  },
+
+  _tutorialRespondNeither() {
+    if (!this.running || !this.tutorialMode) return;
+    if (!this.responseWindowOpen) return;
+    if (this.tutorial._resolved) return;
+    const trial = this.tutorial.seq[this.tutorial.step];
+    const isNeither = !trial.posMatch && !trial.colMatch;
+    if (!isNeither) {
+      // Wrong — show feedback, let retry
+      const btn = document.getElementById('resp-neither');
+      btn.classList.add('wrong');
+      setTimeout(() => btn.classList.remove('wrong'), 400);
+      this.tutorial._markWrong();
+      return;
+    }
+    // Correct
+    document.getElementById('resp-neither').classList.add('correct');
+    this.tutorial._markCorrect();
+    this.tutorial._resolved = true;
+    this._clearCells();
+    setTimeout(() => {
+      document.getElementById('resp-neither').classList.remove('correct');
+      this.tutorial.step++;
+      this.tutorial._showStep();
+    }, 500);
   },
 
   renderGrid() {
@@ -4623,7 +4653,17 @@ const NBack = {
         NBack._showPhase('warmup', '👀 暖场 ' + (this.step + 1) + '/' + NBack.n, '观察记住，无需操作');
         document.getElementById('nb-trial').textContent = '暖场 ' + (this.step + 1) + '/' + NBack.n;
       } else {
-        document.getElementById('nb-response').style.display = isNeither ? 'none' : 'flex';
+        document.getElementById('nb-response').style.display = 'flex';
+        // Show "no match" button for neither-match trials
+        if (isNeither) {
+          document.getElementById('resp-pos').style.display = 'none';
+          document.getElementById('resp-col').style.display = 'none';
+          document.getElementById('resp-neither').style.display = 'inline-flex';
+        } else {
+          document.getElementById('resp-pos').style.display = 'inline-flex';
+          document.getElementById('resp-col').style.display = 'inline-flex';
+          document.getElementById('resp-neither').style.display = 'none';
+        }
         NBack._showPhase('active-phase', '🎯 答题', '第 ' + (this.step + 1) + ' 步 / 共 ' + this.seq.length);
         document.getElementById('nb-trial').textContent = '答题 ' + (this.step - NBack.n + 1) + '/' + (this.seq.length - NBack.n);
       }
@@ -4635,54 +4675,20 @@ const NBack = {
       NBack._showCells(trial);
       NBack.responseWindowOpen = isActive;
 
-      // Timer bar
+      // Timer bar: hidden for tutorial
       const bar = document.getElementById('nb-timer-fill');
       bar.style.transition = 'none'; bar.style.width = '100%'; bar.classList.remove('urgent');
-      void bar.offsetWidth;
-      if (isActive) {
-        bar.style.transition = 'width ' + (NBack.displayMs / 1000) + 's linear';
-        bar.style.width = '0%';
-        NBack._schedule(() => { if (NBack.responseWindowOpen) bar.classList.add('urgent'); }, NBack.displayMs * 0.7);
-      }
 
-      // At displayMs expiry: evaluate and advance
-      NBack._schedule(() => {
-        if (this._resolved) return;
-        this._resolved = true;
-        NBack.responseWindowOpen = false;
-        NBack._clearCells();
-        bar.style.transition = 'none'; bar.style.width = '100%'; bar.classList.remove('urgent');
-        document.getElementById('resp-pos').className = 'resp-btn';
-        document.getElementById('resp-col').className = 'resp-btn';
-
-        if (isWarmup) {
+      // Tutorial: warmup auto-advance after brief display, active waits for player
+      if (isWarmup) {
+        NBack._schedule(() => {
+          if (this._resolved) return;
+          this._resolved = true;
+          NBack._clearCells();
           this.step++;
           NBack._schedule(() => this._showStep(), 400);
-        } else if (isNeither) {
-          this._markCorrect();
-          this.step++;
-          NBack._schedule(() => this._showStep(), 600);
-        } else {
-          const mp = trial.posMatch && !this.responded.pos;
-          const mc = trial.colMatch && !this.responded.col;
-          if (mp || mc) {
-            const cells = document.querySelectorAll('#nb-grid .nback-cell');
-            cells[trial.pos].classList.add('match-miss');
-            const wrap = document.getElementById('nb-grid-wrap');
-            const ov = document.createElement('div');
-            ov.className = 'nback-miss-overlay';
-            if (mp && mc) ov.textContent = 'POSITION MISS + COLOR MISS';
-            else if (mp) ov.textContent = 'POSITION MISS';
-            else ov.textContent = 'COLOR MISS';
-            wrap.appendChild(ov);
-            NBack._schedule(() => ov.remove(), 600);
-            this._markWrong();
-            NBack._schedule(() => cells.forEach(c => c.classList.remove('match-miss')), 300);
-          }
-          this.step++;
-          NBack._schedule(() => this._showStep(), 600);
-        }
-      }, NBack.displayMs);
+        }, 1500);
+      }
     },
 
     respond(type) {
@@ -4772,7 +4778,11 @@ const NBack = {
       document.getElementById('nb-timer-fill').classList.remove('urgent');
       NBack._clearCells();
       document.getElementById('resp-pos').className = 'resp-btn';
+      document.getElementById('resp-pos').style.display = 'inline-flex';
       document.getElementById('resp-col').className = 'resp-btn';
+      document.getElementById('resp-col').style.display = 'inline-flex';
+      document.getElementById('resp-neither').className = 'resp-btn';
+      document.getElementById('resp-neither').style.display = 'none';
 
       const fb = document.getElementById('nb-guide');
       fb.innerHTML = `
@@ -4783,7 +4793,7 @@ const NBack = {
           • 位置相同 → 按 <kbd>A</kbd><br>
           • 颜色相同 → 按 <kbd>L</kbd><br>
           • 可能同时匹配 → 两个都按<br>
-          • 可能都不匹配 → 什么都不按
+          • 可能都不匹配 → 按 <kbd>S</kbd>
         </div>
         <button class="btn" style="margin-top:14px" onclick="App.startNBack(NBack.n)">开始正式训练</button>
       `;
@@ -4867,6 +4877,7 @@ document.addEventListener('keydown', e => {
   if (App.currentGame !== 'nback' || !NBack.running) return;
   if (e.key === 'a' || e.key === 'A') { e.preventDefault(); NBack.respond('pos'); }
   if (e.key === 'l' || e.key === 'L') { e.preventDefault(); NBack.respond('col'); }
+  if (e.key === 's' || e.key === 'S') { e.preventDefault(); NBack._tutorialRespondNeither(); }
 });
 
 // Prevent space scrolling when pressing buttons
