@@ -3717,7 +3717,7 @@ const VocabTest = {
   streakCorrect: 0,
 
   init() {
-    const all = [...WORD_BANK].filter(w=>w.r>=8000);
+    const all = [...WORD_BANK].filter(w=>w.r>=5000);
     for (let i=all.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[all[i],all[j]]=[all[j],all[i]];}
     this.ranked = all;
     this.wordScores = new Map();
