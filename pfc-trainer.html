@@ -273,32 +273,55 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
 .lb-table .rank { color:var(--yellow); font-weight:700; width:30px; }
 #nav-player { font-size:.8rem; color:var(--text2); margin-left:8px; }
 
-/* ===== Vocab Test ===== */
+/* ===== Vocab Test — Warm Library Sub-Theme ===== */
+#game-vocab {
+  --vc-bg: #1e1c18;
+  --vc-surface: #2a2722;
+  --vc-surface2: #36332d;
+  --vc-text: #f0ece4;
+  --vc-text2: #b0a99c;
+  --vc-accent: #d4a44a;
+  --vc-accent2: #b88930;
+  --vc-border: rgba(200,180,150,.12);
+  --vc-border-hover: rgba(212,164,74,.5);
+}
+#game-vocab .game-header h2 { color: var(--vc-accent); }
+#game-vocab .score-area .stat .val { color: var(--vc-accent); }
+#game-vocab .score-area .stat .lbl { color: var(--vc-text2); }
+#game-vocab .instructions { color: var(--vc-text2); }
+#game-vocab .btn.outline { border-color: var(--vc-accent); color: var(--vc-accent); }
+#game-vocab .btn.outline:hover { background: var(--vc-accent); color: #fff; }
+#game-vocab .results .big-score { color: var(--vc-accent); }
+#game-vocab .results .details b { color: var(--vc-accent); }
+
 .vocab-word {
   font-size: clamp(40px, 8vw, 64px); font-weight: 900;
   text-align: center; padding: 24px 0 28px; user-select: none;
-  color: var(--accent); letter-spacing: .04em;
+  color: #e8d8a0; letter-spacing: .04em;
+  text-shadow: 0 0 40px rgba(212,164,74,.25);
 }
 .vocab-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: min(440px, 90vw); }
 .vocab-opt {
-  padding: 12px 14px; border-radius: var(--radius-sm); border: 2px solid rgba(255,255,255,.1);
-  background: var(--surface2); color: var(--text); cursor: pointer;
-  font-size: .9rem; transition: all .12s; text-align: center;
+  padding: 12px 14px; border-radius: var(--radius-sm);
+  border: 2px solid rgba(200,180,150,.12);
+  background: #2a2722; color: var(--vc-text);
+  cursor: pointer; font-size: .9rem; transition: all .12s; text-align: center;
   user-select: none; min-height: 50px; display: flex; align-items: center; justify-content: center;
   line-height: 1.4;
 }
-.vocab-opt:hover { border-color: var(--accent); }
+.vocab-opt:hover { border-color: rgba(212,164,74,.5); background: #333028; }
 .vocab-opt:active { transform: scale(.97); }
-.vocab-opt.correct { background: var(--green); border-color: var(--green); color: #000; }
-.vocab-opt.wrong { background: var(--red); border-color: var(--red); color: #fff; }
+.vocab-opt.correct { background: #4a7c5c; border-color: #5a9e6f; color: #e8f0e8; }
+.vocab-opt.wrong { background: #8b4a4a; border-color: #c46b6b; color: #fff; }
 .vocab-opt.full-width { grid-column: 1 / -1; }
-.vocab-opt.dunno { border-style: dashed; opacity: .7; }
+.vocab-opt.dunno { border-style: dashed; opacity: .6; }
 .vocab-timer-bar {
-  width: min(440px, 90vw); height: 4px; background: rgba(255,255,255,.08);
-  border-radius: 2px; margin: 0 auto 12px; overflow: hidden;
+  width: min(440px, 90vw); height: 4px;
+  background: rgba(200,180,150,.1); border-radius: 2px;
+  margin: 0 auto 12px; overflow: hidden;
 }
 .vocab-timer-bar .fill {
-  height: 100%; background: var(--accent); border-radius: 2px;
+  height: 100%; background: var(--vc-accent); border-radius: 2px;
   transition: width .1s linear;
 }
 .vocab-timer-bar .fill.urgent { background: var(--red); }
