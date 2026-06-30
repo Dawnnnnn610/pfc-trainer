@@ -3809,8 +3809,35 @@ const VocabTest = {
     return results;
   },
 
+  // Simplify a meaning string for option display: deduplicate overlapping segments, keep 1-2 distinct
+  _simplifyOption(m){
+    const parts=m.split(/[;；]/).map(s=>s.trim()).filter(s=>s.length>=2);
+    if(parts.length<=1)return m;
+    const distinct=[parts[0]];
+    for(let i=1;i<parts.length;i++){
+      if(distinct.length>=2)break;
+      let overlap=false;
+      for(const d of distinct){
+        const shorter=d.length<parts[i].length?d:parts[i];
+        const longer=shorter===d?parts[i]:d;
+        // Same first char → likely same concept (收缩/缩小, 狂怒/盛怒)
+        if(d[0]===parts[i][0]){overlap=true;break;}
+        // Substring containment
+        if(longer.includes(shorter)){overlap=true;break;}
+        // Shared character ratio >= 40%
+        let shared=0;
+        for(let j=0;j<shorter.length;j++){if(longer.includes(shorter[j]))shared++;}
+        if(shared/shorter.length>=0.4){overlap=true;break;}
+      }
+      if(!overlap)distinct.push(parts[i]);
+    }
+    return distinct.join('；');
+  },
+
   _renderOptions(correctM, confusables, useNoneCorrect) {
-    let opts=useNoneCorrect?[...confusables,'以上都不正确','我不知道']:[correctM,...confusables,'以上都不正确','我不知道'];
+    const cleanCorrect=this._simplifyOption(correctM);
+    const cleanConf=confusables.map(c=>this._simplifyOption(c));
+    let opts=useNoneCorrect?[...cleanConf,'以上都不正确','我不知道']:[cleanCorrect,...cleanConf,'以上都不正确','我不知道'];
     const pf=opts.slice(0,4);for(let i=pf.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pf[i],pf[j]]=[pf[j],pf[i]];}opts=[...pf,opts[4],opts[5]];
     const el=document.getElementById('vc-options');if(document.activeElement)document.activeElement.blur();el.innerHTML='';
     opts.forEach((opt,idx)=>{const b=document.createElement('div');b.className='vocab-opt';b.tabIndex=-1;if(idx>=4){b.classList.add('dunno');b.classList.add('full-width');}b.textContent=opt;b.addEventListener('click',()=>this.answer(opt,correctM,useNoneCorrect,performance.now()-this._trialStart,b));el.appendChild(b);});
@@ -3820,7 +3847,8 @@ const VocabTest = {
     if(!this.running)return;
     if(this._timer){clearTimeout(this._timer);this._timer=null;}
     const word=this._pickWord();if(!word)return;this.seenWords.add(word.w);
-    const correctM=word.m;const useNoneCorrect=Math.random()<0.12;
+    const correctM=word.m;this._simplifiedCorrect=this._simplifyOption(correctM);
+    const useNoneCorrect=Math.random()<0.12;
     const confusables=this._getConfusableMeanings(word,useNoneCorrect?4:3);
     document.getElementById('vc-word').textContent=word.w;
     this._renderOptions(correctM,confusables,useNoneCorrect);this._trialStart=performance.now();
@@ -3860,12 +3888,12 @@ const VocabTest = {
     if(!this.running||this._timer._processed)return;
     if(this._timer){clearTimeout(this._timer);this._timer=null;}this._timer={_processed:true};
     const bar=document.getElementById('vc-timer-fill');bar.style.transition='none';bar.style.width='100%';bar.classList.remove('urgent');
-    const actuallyCorrect=(chosen===correctM)||(chosen==='以上都不正确'&&useNoneCorrect);
+    const actuallyCorrect=(chosen===this._simplifiedCorrect)||(chosen==='以上都不正确'&&useNoneCorrect);
     const opts=Array.from(document.getElementById('vc-options').children);
     if(!actuallyCorrect&&chosen!=='我不知道')btn.classList.add('wrong');
     if(actuallyCorrect&&chosen!=='我不知道')btn.classList.add('correct');
     btn.blur(); if(document.activeElement)document.activeElement.blur();
-    if(!actuallyCorrect){const ci=useNoneCorrect?4:opts.slice(0,4).map(o=>o.textContent).indexOf(correctM);if(ci>=0)opts[ci].classList.add('correct');else if(useNoneCorrect)opts[4].classList.add('correct');}
+    if(!actuallyCorrect){const ci=useNoneCorrect?4:opts.slice(0,4).map(o=>o.textContent).indexOf(this._simplifiedCorrect);if(ci>=0)opts[ci].classList.add('correct');else if(useNoneCorrect)opts[4].classList.add('correct');}
     this._processAnswer({w:'',r:0},actuallyCorrect,ms,chosen);
   },
 
