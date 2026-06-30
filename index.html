@@ -5180,14 +5180,15 @@ const Schulte = {
     const g = document.getElementById('sc-grid');
     const s = this.size;
     g.style.gridTemplateColumns = 'repeat(' + s + ', 1fr)';
-    g.style.width = s > 5 ? 'min(' + (s * 52) + 'px, 96vw)' : 'min(360px, 85vw)';
+    g.style.width = s === 8 ? 'min(520px, 96vw)' : s === 10 ? 'min(600px, 96vw)' : 'min(360px, 85vw)';
     g.style.gap = s > 5 ? '4px' : '6px';
     g.innerHTML = '';
     this.grid.forEach(num => {
       const c = document.createElement('div');
       c.className = 'schulte-cell';
       c.textContent = num;
-      c.style.fontSize = s > 5 ? 'clamp(10px, ' + (3 - s * 0.15) + 'vw, 16px)' : '';
+      if (s === 8) c.style.fontSize = 'clamp(18px, 3.2vw, 28px)';
+      else if (s === 10) c.style.fontSize = 'clamp(16px, 2.6vw, 24px)';
       c.dataset.num = num;
       c.addEventListener('click', () => this.clickCell(c, num));
       g.appendChild(c);
