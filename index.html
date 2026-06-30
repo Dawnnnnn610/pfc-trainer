@@ -3711,7 +3711,7 @@ const VocabTest = {
   theta: 1000,         // player ability estimate
   totalTried: 0, totalCorrect: 0, totalTime: 0,
   running: false,
-  seenWords: null,
+  seenWords: null, recentSeen: [], currentWord: null,
   _timer: null, _trialStart: 0,
   K: 80,
   probeCount: 0,
@@ -3733,9 +3733,10 @@ const VocabTest = {
     }
     for (const b of this.buckets) { for (let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];} }
 
-    this.theta = 500; this.K = 80;
+    this.theta = 2000; this.K = 80;
     this.totalTried = 0; this.totalCorrect = 0; this.totalTime = 0;
     this.running = true; this.seenWords = new Set();
+    this.recentSeen = [];  // FIFO buffer, last 40 words blocked from reappearing
     this.probeCount = 0; this.streakCorrect = 0;
     document.getElementById('vc-estimate').textContent = '...评估中...';
     document.getElementById('vc-level').textContent = '--';
@@ -3758,10 +3759,11 @@ const VocabTest = {
     else if (roll < 0.85) { lo=Math.min(19,targetBucket+1); hi=Math.min(19,targetBucket+5); }
     else { lo=0; hi=19; }
 
-    let pool = [];
-    for (let b=lo; b<=hi; b++) { for (const w of this.buckets[b]||[]) { if (!this.seenWords.has(w.w)) pool.push(w); } }
-    if (pool.length===0) pool=this.ranked.filter(w=>!this.seenWords.has(w.w));
-    if (pool.length===0) { for (const w of this.ranked) this.seenWords.delete(w.w); pool=[...this.ranked]; }
+    const recentSet=new Set(this.recentSeen||[]);
+    let pool=[];
+    for(let b=lo;b<=hi;b++){for(const w of this.buckets[b]||[]){if(!this.seenWords.has(w.w)&&!recentSet.has(w.w))pool.push(w);}}
+    if(pool.length===0)pool=this.ranked.filter(w=>!this.seenWords.has(w.w)&&!recentSet.has(w.w));
+    if(pool.length===0){for(const w of this.ranked){this.seenWords.delete(w.w);recentSet.delete(w.w);}pool=this.ranked.filter(w=>!recentSet.has(w.w));}
     for(let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
     const pick=Math.min(30,pool.length);
     return pool[Math.floor(Math.random()*pick)];
@@ -3797,6 +3799,7 @@ const VocabTest = {
     if(!this.running)return;
     if(this._timer){clearTimeout(this._timer);this._timer=null;}
     const word=this._pickWord();if(!word)return;this.seenWords.add(word.w);
+    this.currentWord=word;
     const correctM=word.m;const useNoneCorrect=Math.random()<0.12;
     const confusables=this._getConfusableMeanings(word,useNoneCorrect?4:3);
     document.getElementById('vc-word').textContent=word.w;
@@ -3809,7 +3812,10 @@ const VocabTest = {
   _processAnswer(word, correct, ms, chosen) {
     this.totalTried++;this.totalTime+=ms;
     if(correct){this.totalCorrect++;this.streakCorrect++;}else{this.streakCorrect=0;}
-    const difficulty=this.wordScores.get(word.w)||5000;
+    // Push into recentSeen FIFO to avoid immediate repeats
+    const ww=this.currentWord?this.currentWord.w:word.w;
+    if(ww){this.recentSeen.push(ww);if(this.recentSeen.length>50)this.recentSeen.shift();}
+    const difficulty=this.wordScores.get(ww)||this.wordScores.get(word.w)||5000;
     const P=1/(1+Math.exp(-(this.theta-difficulty)/2000));
     let K=this.K/(1+this.totalTried*0.02);
     if(correct){if(ms<2000)K*=1.4;else if(ms<4000)K*=1.1;else K*=0.8;}else{if(ms>=6000)K*=1.2;}
