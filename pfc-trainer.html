@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -3766,10 +3766,18 @@ const VocabTest = {
 
   _getConfusableMeanings(word, count) {
     const results=[],used=new Set; used.add(word.m);
-    const prefix=word.w.slice(0,3).toLowerCase();
-    for(const w of this.ranked){if(w.w===word.w||used.has(w.m)||w.m===word.m)continue;if(w.w.toLowerCase().startsWith(prefix)){results.push(w.m);used.add(w.m);}if(results.length>=count)break;}
-    if(results.length<count){const tl=word.w.length;for(const w of this.ranked){if(w.w===word.w||used.has(w.m)||w.m===word.m)continue;if(Math.abs(w.w.length-tl)<=1){results.push(w.m);used.add(w.m);}if(results.length>=count)break;}}
-    if(results.length<count){const p=this.ranked.filter(w=>w.w!==word.w&&!used.has(w.m)&&w.m!==word.m);for(let i=p.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[p[i],p[j]]=[p[j],p[i]];}for(const w of p){if(results.length>=count)break;if(!used.has(w.m)){results.push(w.m);used.add(w.m);}}}
+    // Shuffle & pick random distractors, skip same-root variants (4+ shared prefix chars)
+    const shuffled=[...this.ranked];
+    for(let i=shuffled.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]];}
+    for(const w of shuffled){
+      if(results.length>=count)break;
+      if(w.w===word.w||used.has(w.m)||w.m===word.m)continue;
+      const lo=word.w.toLowerCase(),lw=w.w.toLowerCase();
+      const minLen=Math.min(lo.length,lw.length);
+      if(minLen>=4&&lo.slice(0,4)===lw.slice(0,4))continue;
+      if(word.m.slice(0,2)===w.m.slice(0,2))continue;
+      results.push(w.m);used.add(w.m);
+    }
     const fp=['快速移动','缓慢下降','突然出现','大声说话','安静思考','逐渐消失','猛烈攻击','温柔对待','坚定拒绝','勉强接受','秘密调查','公开声明','完美呈现','粗糙制作','精确计算','随意安排'];
     while(results.length<count){const f=fp[Math.floor(Math.random()*fp.length)];if(!used.has(f)){results.push(f);used.add(f);}}
     return results;
