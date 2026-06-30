@@ -288,6 +288,8 @@ main { width: 100%; max-width: 800px; flex: 1; padding: 0 24px 40px; }
   line-height: 1.4; outline: none;
 }
 .vocab-opt:hover { border-color: var(--accent); }
+.vocab-opt:focus { border-color: rgba(0,0,0,.06); box-shadow: none; }
+.vocab-opt:focus-visible { border-color: rgba(0,0,0,.06); outline: none; box-shadow: none; }
 .vocab-opt:active { transform: scale(.97); }
 .vocab-opt.correct { background: var(--green); border-color: var(--green); color: #000; }
 .vocab-opt.wrong { background: var(--red); border-color: var(--red); color: #fff; }
@@ -3787,8 +3789,8 @@ const VocabTest = {
   _renderOptions(correctM, confusables, useNoneCorrect) {
     let opts=useNoneCorrect?[...confusables,'以上都不正确','我不知道']:[correctM,...confusables,'以上都不正确','我不知道'];
     const pf=opts.slice(0,4);for(let i=pf.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pf[i],pf[j]]=[pf[j],pf[i]];}opts=[...pf,opts[4],opts[5]];
-    const el=document.getElementById('vc-options');el.innerHTML='';
-    opts.forEach((opt,idx)=>{const b=document.createElement('div');b.className='vocab-opt';if(idx>=4){b.classList.add('dunno');b.classList.add('full-width');}b.textContent=opt;b.addEventListener('click',()=>this.answer(opt,correctM,useNoneCorrect,performance.now()-this._trialStart,b));el.appendChild(b);});
+    const el=document.getElementById('vc-options');if(document.activeElement)document.activeElement.blur();el.innerHTML='';
+    opts.forEach((opt,idx)=>{const b=document.createElement('div');b.className='vocab-opt';b.tabIndex=-1;if(idx>=4){b.classList.add('dunno');b.classList.add('full-width');}b.textContent=opt;b.addEventListener('click',()=>this.answer(opt,correctM,useNoneCorrect,performance.now()-this._trialStart,b));el.appendChild(b);});
   },
 
   nextQuestion() {
